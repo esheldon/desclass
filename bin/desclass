@@ -1,0 +1,213 @@
+#!/usr/bin/env python
+import numpy as np
+import fitsio
+import ngmix
+from desclass.outputs import get_struct
+from desclass.inject import Stars, inject_star_into_obslist
+from desclass.psf_flux import do_psf_flux
+from desclass.util import get_mag, trim_obslist
+from desclass.conc import do_sums_oneband, finalize_conc
+from desclass.flags import zero_masked_weights
+
+
+import argparse
+
+
+def get_args():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--flist', nargs='+', required=True,
+                        help='meds files to process')
+    parser.add_argument('--stars', required=True,
+                        help='stars to inject')
+    parser.add_argument('--output', required=True,
+                        help='output FITS file name')
+    parser.add_argument('--seed', type=int, required=True,
+                        help='seed for random number generator')
+
+    parser.add_argument('--start', type=int,
+                        help='start index to process')
+    parser.add_argument('--end', type=int,
+                        help='end index to process')
+
+    parser.add_argument('--max-inject-rmag', type=float,
+                        default=25.0,
+                        help='maximum injection mag')
+    return parser.parse_args()
+
+
+def get_start_end(args, nobj):
+    """
+    get start/end indices for processing
+
+    args: args from argparse
+        Returned from get_args()
+
+    Returns
+    -------
+    start, end integers
+    """
+    start = args.start
+    if start is None:
+        start = 0
+
+    end = args.end
+    if end is None:
+        end = nobj-1
+
+    return start, end
+
+
+def get_obslist(*, mobj, iobj):
+    """
+    extract the obslist from the meds objects, trimming the images and
+    zeroing the weights for masked bits
+
+    Parameters
+    ----------
+    mobj: ngmix.medsreaders.NGMixMeds
+        meds object
+    iobj: int
+        Index for object
+
+    Returns
+    -------
+    ngmix.ObsList
+    """
+    obslist = mobj.get_obslist(iobj, weight_type='weight')
+
+    if len(obslist) < 2:
+        # no obs in this band
+        return []
+
+    # remove coadd
+    obslist = obslist[1:]
+
+    obslist = trim_obslist(obslist=obslist)
+    obslist = zero_masked_weights(obslist=obslist)
+
+    return obslist
+
+
+def process_args(args):
+    """
+    process the args and get some data
+
+    Parameters
+    ----------
+    args: args from ArgumentParser
+
+    Returns
+    -------
+    rng: np.random.RandomState
+        Random number generator
+    start: int
+        Start index for object processing
+    end: int
+        End index for object processing, inclusive
+    output: array with fields
+        Output array for the objects
+    inject_output: array with fields
+        Output array for the injections
+    stars: array with fields
+        The star data for injections
+    """
+    rng = np.random.RandomState(args.seed)
+
+    nband = len(args.flist)
+
+    mobj = ngmix.medsreaders.NGMixMEDS(args.flist[0])
+
+    start, end = get_start_end(args, mobj.size)
+    num = end-start+1
+
+    output = get_struct(size=num, nband=nband)
+    inject_output = get_struct(size=num, nband=nband, injections=True)
+
+    output['id'] = mobj['id'][start:end+1]
+    output['ra'] = mobj['ra'][start:end+1]
+    output['dec'] = mobj['dec'][start:end+1]
+
+    starcat = Stars(
+        fname=args.stars,
+        rng=rng,
+        max_inject_rmag=args.max_inject_rmag,
+    )
+    stars = starcat.sample(num)
+
+    inject_output['true_mag'] = stars['psf_mag']
+
+    return rng, start, end, output, inject_output, stars
+
+
+def main():
+    args = get_args()
+
+    nband = len(args.flist)
+
+    rng, start, end, output, inject_output, stars = process_args(args)
+
+    for iband in range(nband):
+        fname = args.flist[iband]
+        print('loading:', fname)
+        mobj = ngmix.medsreaders.NGMixMEDS(fname)
+
+        for iobj in range(start, end+1):
+            index = iobj - start
+
+            if iobj % 100 == 0:
+                print('band %d:%d obj %d:%d' % (iband+1, nband, iobj, end))
+
+            obslist = get_obslist(mobj=mobj, iobj=iobj)
+            if len(obslist) == 0:
+                continue
+
+            # process real objects
+            do_psf_flux(obslist=obslist)
+
+            output['psf_flags'][index, iband] = obslist[0].meta['psf_flags']
+            output['psf_flux'][index, iband] = obslist[0].meta['psf_flux']
+            output['psf_flux_err'][index, iband] = \
+                obslist[0].meta['psf_flux_err']
+            output['psf_mag'][index, iband] = get_mag(
+                output['psf_flux'][index, iband],
+            )
+
+            do_sums_oneband(
+                args=args, rng=rng, obslist=obslist,
+                data=output, index=index, iband=iband,
+            )
+
+            # now inject stars
+            star_flux = stars['psf_flux'][index, iband]
+
+            inj_obslist = inject_star_into_obslist(
+                rng=rng, obslist=obslist, star_flux=star_flux,
+            )
+
+            do_psf_flux(obslist=inj_obslist)
+
+            ipsf_flags = inj_obslist[0].meta['psf_flags']
+            ipsf_flux = inj_obslist[0].meta['psf_flux']
+            ipsf_flux_err = inj_obslist[0].meta['psf_flux_err']
+
+            inject_output['psf_flags'][index, iband] = ipsf_flags
+            inject_output['psf_flux'][index, iband] = ipsf_flux
+            inject_output['psf_flux_err'][index, iband] = ipsf_flux_err
+            inject_output['psf_mag'][index, iband] = get_mag(ipsf_flux)
+
+            do_sums_oneband(
+                args=args, rng=rng, obslist=inj_obslist,
+                data=inject_output, index=index, iband=iband,
+            )
+
+    finalize_conc(data=output)
+    finalize_conc(data=inject_output)
+
+    print('writing:', args.output)
+    with fitsio.FITS(args.output, 'rw', clobber=True) as fits:
+        fits.write(output, extname='objects')
+        fits.write(inject_output, extname='injections')
+
+
+if __name__ == '__main__':
+    main()
