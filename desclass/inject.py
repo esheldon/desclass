@@ -48,13 +48,6 @@ def inject_star_into_obs(*, rng, obs, star_flux):
         psf=obs.psf,
     )
 
-    if False:
-        import hickory
-        plt = hickory.Table(1, 2)
-        plt[0].imshow(obs.image)
-        plt[1].imshow(new_obs.image)
-        plt.show()
-
     return new_obs
 
 
