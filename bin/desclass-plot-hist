@@ -1,0 +1,217 @@
+#!/usr/bin/env python
+
+import numpy as np
+import esutil as eu
+from esutil.numpy_util import between
+from hickory import Table
+import staramp
+import bf
+
+
+def get_args():
+    import argparse
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--flist', nargs='+', required=True)
+    parser.add_argument('--mag-index', type=int, default=1)
+    parser.add_argument('--output')
+    parser.add_argument('--show', action='store_true')
+    return parser.parse_args()
+
+
+def _read(*, flist, ext):
+    t = eu.io.read(flist, ext=ext)
+    w, = np.where(t['flags'] == 0)
+    print("kept: %d/%d  %g" % (w.size, t.size, w.size/t.size))
+    return t[w]
+
+
+def read(flist):
+    flist.sort()
+    t = _read(flist=flist, ext='objects')
+    inj = _read(flist=flist, ext='injections')
+    return t, inj
+
+
+def get_mag(*, args, data):
+    if len(data['psf_mag'].shape) > 1:
+        psf_mag = data['psf_mag'][:, args.mag_index]
+    else:
+        psf_mag = data['psf_mag']
+
+    return psf_mag
+
+
+def select(*, args, data, magmin, magmax):
+
+    psf_mag = get_mag(args=args, data=data)
+
+    w, = np.where(
+        between(psf_mag, magmin, magmax)
+    )
+    return w
+
+
+def dohist(ax, conc, hrange, binsize, weight=None):
+
+    if weight is not None:
+        weights = np.zeros(conc.size) + weight
+    else:
+        weights = None
+
+    ax.hist(
+        conc,
+        binsize=binsize,
+        range=hrange,
+        alpha=0.5,
+        weights=weights,
+    )
+
+
+def get_amp(*, args, data):
+    psf_mag = get_mag(args=args, data=data)
+    if args.output is not None:
+        amp_output = args.output.replace(
+            '.png', '-fit.png',
+        ).replace(
+            '.pdf', '-fit.pdf',
+        )
+    else:
+        amp_output = None
+
+    return staramp.get_amp(
+        psf_mag=psf_mag,
+        conc=data['conc'],
+        show=args.show,
+        output=amp_output,
+    )
+
+
+def main():
+    args = get_args()
+
+    figsize = (12, 7)
+    plt = Table(4, 4, figsize=figsize)
+
+    flist = args.flist
+
+    t, inj = read(flist)
+
+    amp = get_amp(args=args, data=t)
+    # edges = [
+    #     (21, 22),
+    #     (22, 23),
+    #     (23, 23.5),
+    #     (23.5, 24.0),
+    #     (24, 24.5),
+    #     (24.5, 25),
+    # ]
+
+    edges = [
+        (17.0, 17.5),
+        (17.5, 18.0),
+        (18.0, 18.5),
+        (18.5, 19.0),
+
+        (19.0, 19.5),
+        (19.5, 20.0),
+        (20, 20.5),
+        (20.5, 21.0),
+        (21, 21.5),
+        (21.5, 22.0),
+        (22, 22.5),
+        (22.5, 23),
+        (23, 23.5),
+        (23.5, 24.0),
+        (24, 24.5),
+        (24.5, 25),
+    ]
+
+    nsig = 3
+    magmin, magmax = edges[0]
+    # magmin, magmax = 17.0, 18.5
+    magmin, magmax = 17.0, 17.5
+    w = select(args=args, data=t, magmin=magmin, magmax=magmax)
+    ww, = np.where(between(t['conc'][w], -0.0005, 0.0005))
+    _, ref_std = eu.stat.sigma_clip(t['conc'][w[ww]], nsig=nsig)
+
+    # good at the faint end, but more like -2.5e-05 at the bright end ~17
+
+    winj = select(args=args, data=inj, magmin=magmin, magmax=magmax)
+    _, inj_std, subind = eu.stat.sigma_clip(inj['conc'][winj], get_indices=True, nsig=nsig)
+    inj_std = inj['conc'][winj[subind]].std()
+
+    print('ref std0:', ref_std)
+    print('inj std:', inj_std)
+    ref_std = np.sqrt(ref_std**2 - inj_std**2)
+    print('ref std:', ref_std)
+
+    # got using code in bf.py
+    bf_amp = -3.6e-06
+
+    for i in range(len(edges)):
+        magmin, magmax = edges[i]
+
+        ax = plt.axes[i]
+
+        w = select(args=args, data=t, magmin=magmin, magmax=magmax)
+
+        mn, std = eu.stat.sigma_clip(t['conc'][w], nsig=nsig)
+        # print('data', mn, std)
+
+        winj = select(args=args, data=inj, magmin=magmin, magmax=magmax)
+        inj_mn, inj_std0 = eu.stat.sigma_clip(inj['conc'][winj], nsig=nsig)
+        # print('inj', inj_mn, inj_std)
+
+        inj_std = np.sqrt(inj_std0**2 + ref_std**2)
+        width = 4*inj_std
+        if width < 0.0005:
+            width = 0.0005
+        hrange = (-width, width)
+        binsize = inj_std/4
+
+        ww, = np.where(between(t['conc'][w], -0.0005, 0.0005))
+        tmn, tstd = eu.stat.sigma_clip(t['conc'][w[ww]], nsig=nsig)
+
+        ax.set_xlim(hrange[0], hrange[1])
+        ax.set_xlabel('concentration')
+
+        dohist(ax, t['conc'][w], hrange, binsize)
+
+        center = (magmin + magmax)*0.5
+
+        weight = amp*(center - 12)**1.5 / winj.size
+
+        label = r'[%.2f, %.2f] $\sigma: %.4g$' % (
+            magmin, magmax, inj_std,
+        )
+
+        # with extra scatter
+
+        bf_offset = bf.predict(center, bf_amp)
+        pvals = bf_offset + inj['conc'][winj] + np.random.normal(
+            scale=ref_std, size=winj.size,
+        )
+        dohist(
+            ax,
+            pvals,
+            hrange, binsize,
+            weight=weight,
+        )
+
+        # scale = np.sqrt(ref_std**2 + inj_std**2)
+        # print('[%.1f, %.1f] sigma: %g' % (magmin, magmax, inj_std))
+
+        label = r'[%.2f, %.2f] $\sigma: %.4g$' % (magmin, magmax, inj_std)
+
+        ax.set_title(label)
+
+    if args.show:
+        plt.show()
+
+    if args.output is not None:
+        print('writing:', args.output)
+        plt.savefig(args.output)
+
+
+if __name__ == '__main__':
+    main()
