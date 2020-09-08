@@ -2,7 +2,8 @@ import numpy as np
 from numba import njit
 import ngmix
 from ngmix.gmix_nb import gmix_eval_pixel
-from .util import get_mag, MAXRAD, DILATE
+from .util import get_mag
+from .constants import MAXRAD, DILATE
 from .fitting import fit_gauss_am
 
 
