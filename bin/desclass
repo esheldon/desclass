@@ -173,7 +173,7 @@ def main():
             )
 
             do_sums_oneband(
-                args=args, rng=rng, obslist=obslist,
+                rng=rng, obslist=obslist,
                 data=output, index=index, iband=iband,
             )
 
@@ -196,7 +196,7 @@ def main():
             inject_output['psf_mag'][index, iband] = get_mag(ipsf_flux)
 
             do_sums_oneband(
-                args=args, rng=rng, obslist=inj_obslist,
+                rng=rng, obslist=inj_obslist,
                 data=inject_output, index=index, iband=iband,
             )
 

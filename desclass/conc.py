@@ -9,7 +9,7 @@ from .fitting import fit_gauss_am
 
 def do_sums_oneband(
     *,
-    args, rng, obslist,
+    rng, obslist,
     data, index, iband,
 ):
     """
@@ -18,8 +18,6 @@ def do_sums_oneband(
 
     Parameters
     ----------
-    args: args from argparse
-        Returned from get_args()
     rng: np.RandomState
         The random number generator
     obslist: ngmix.ObsList
@@ -28,7 +26,7 @@ def do_sums_oneband(
 
     for obs in obslist:
         gres = get_gap_fluxes(
-            args=args, rng=rng, obs=obs,
+            rng=rng, obs=obs,
             maxrad=MAXRAD,
         )
 
@@ -43,14 +41,12 @@ def do_sums_oneband(
             data['pflux2'][index] += gres['pflux2']
 
 
-def get_gap_fluxes(*, args, rng, obs, maxrad):
+def get_gap_fluxes(*, rng, obs, maxrad):
     """
     get gap fluxes for a single band
 
     Parameters
     ----------
-    args: args from argpars
-        Returned from get_args()
     rng: np.RandomState
         The random number generator
     obs: ngmix.Observation
