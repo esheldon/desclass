@@ -6,7 +6,7 @@ scripts = [s for s in scripts if '~' not in s]
 
 setup(
     name="desclass",
-    version="0.1.0",
+    version="0.9.0",
     packages=find_packages(),
     scripts=scripts,
     author='Erin Sheldon',
