@@ -4,9 +4,28 @@ from esutil.numpy_util import between
 
 MAGOFF = 13.5
 SLOPE = 1.5
+MAGMIN, MAGMAX = 16.5, 19.5
+NBIN = 6
+CMIN, CMAX = -0.0005, 0.0003
 
 
 def predict(*, rmag, amp):
+    """
+    predict the rmag hist for the predefined mag bins
+
+        num = amp * (rmag - MAGOFF)**SLOPE
+
+    Parameters
+    ----------
+    rmag: float or array
+        r band magnitudes in bins
+    amp: float
+        amplitude of the relation
+
+    Returns
+    -------
+    the predicted number in each rmag bin
+    """
     return amp * (rmag - MAGOFF)**SLOPE
 
 
@@ -31,21 +50,16 @@ def get_amp(*, rmag, conc, show=False, output=None):
     amp: float
         Amplitude
     """
-    # magmin, magmax = 16.0, 19.5
-    # nbin = 7
-    magmin, magmax = 16.5, 19.5
-    nbin = 6
 
-    cmin, cmax = -0.0005, 0.0003
     w, = np.where(
-        between(rmag, magmin, magmax)
+        between(rmag, MAGMIN, MAGMAX)
         &
-        between(conc, cmin, cmax)
+        between(conc, CMIN, CMAX)
     )
 
     hd = eu.stat.histogram(
         rmag[w],
-        min=magmin, max=magmax, nbin=nbin,
+        min=MAGMIN, max=MAGMAX, nbin=NBIN,
         more=True,
     )
     herr = np.sqrt(hd['hist'])
@@ -105,7 +119,6 @@ def get_amp(*, rmag, conc, show=False, output=None):
             plt.show()
 
         if output is not None:
-            output = output.replace('.png', '-fit.png')
             print('writing:', output)
             plt.savefig(output)
 
