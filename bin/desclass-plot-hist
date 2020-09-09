@@ -4,8 +4,8 @@ import numpy as np
 import esutil as eu
 from esutil.numpy_util import between
 from hickory import Table
-import staramp
-import bf
+from desclass import staramp
+from desclass import bf
 
 
 def get_args():
@@ -137,7 +137,9 @@ def main():
     # good at the faint end, but more like -2.5e-05 at the bright end ~17
 
     winj = select(args=args, data=inj, magmin=magmin, magmax=magmax)
-    _, inj_std, subind = eu.stat.sigma_clip(inj['conc'][winj], get_indices=True, nsig=nsig)
+    _, inj_std, subind = eu.stat.sigma_clip(
+        inj['conc'][winj], get_indices=True, nsig=nsig,
+    )
     inj_std = inj['conc'][winj[subind]].std()
 
     print('ref std0:', ref_std)
