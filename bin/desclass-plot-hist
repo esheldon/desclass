@@ -181,27 +181,29 @@ def main():
 
         center = (magmin + magmax)*0.5
 
-        weight = amp*(center - 12)**1.5 / winj.size
 
         label = r'[%.2f, %.2f] $\sigma: %.4g$' % (
             magmin, magmax, inj_std,
         )
 
-        # with extra scatter
+        # add the predicted brighter-fatter offset, plus the
+        # extra scatter, presumably due to scatter in the PSF
 
         bf_offset = bf.predict(rmag=center, amp=bf_amp)
         pvals = bf_offset + inj['conc'][winj] + np.random.normal(
             scale=ref_std, size=winj.size,
         )
+
+        # re-weight to get the right density
+        predicted = staramp.predict(rmag=center, amp=amp)
+        weight = predicted / winj.size
+
         dohist(
             ax,
             pvals,
             hrange, binsize,
             weight=weight,
         )
-
-        # scale = np.sqrt(ref_std**2 + inj_std**2)
-        # print('[%.1f, %.1f] sigma: %g' % (magmin, magmax, inj_std))
 
         label = r'[%.2f, %.2f] $\sigma: %.4g$' % (magmin, magmax, inj_std)
 
