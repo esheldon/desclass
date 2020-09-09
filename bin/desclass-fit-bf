@@ -3,13 +3,13 @@ import numpy as np
 import esutil as eu
 from esutil.numpy_util import between
 import argparse
-from desclass.bf import predict, get_amp
+from desclass import bf
 
 
 def get_args():
     parser = argparse.ArgumentParser()
     parser.add_argument('--star-file', required=True)
-    parser.add_argument('--mag-index', type=int, required=True)
+    parser.add_argument('--rmag-index', type=int, required=True)
     parser.add_argument('--show', action='store_true',
                         help='show plot on screen')
     parser.add_argument('--output',
@@ -26,7 +26,7 @@ def main():
 
     stars = stars[w]
 
-    rmag = stars['psf_mag'][:, args.mag_index]
+    rmag = stars['psf_mag'][:, args.rmag_index]
     h, rev = eu.stat.histogram(rmag, min=19, max=23, nbin=10, rev=True)
 
     psf_mag_mean = []
@@ -56,7 +56,7 @@ def main():
     conc_mean = np.array(conc_mean)
     conc_err = np.array(conc_err)
 
-    amp = get_amp(psf_mag_mean, conc_mean)
+    amp = bf.get_amp(rmag=psf_mag_mean, conc=conc_mean)
     print('amp:', amp)
 
     if args.show or args.output is not None:
@@ -70,7 +70,8 @@ def main():
 
         label = r'$%.2g \times \mathrm{mag}^{2}$' % amp
         plt.errorbar(psf_mag_mean, conc_mean, conc_err, label='stars')
-        plt.curve(psf_mag_mean, predict(psf_mag_mean, amp), label=label)
+        pvals = bf.predict(rmag=psf_mag_mean, amp=amp)
+        plt.curve(psf_mag_mean, pvals, label=label)
 
         if args.show:
             plt.show()

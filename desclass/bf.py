@@ -5,7 +5,7 @@ SLOPE = 2.0
 OFF = 16
 
 
-def predict(rmag, amp):
+def predict(*, rmag, amp):
     """
     predict the brighter fatter concentration offset as a function of r band
     magnitude
@@ -39,7 +39,7 @@ def predict(rmag, amp):
     return bf_conc
 
 
-def get_amp(rmag, conc):
+def get_amp(*, rmag, conc):
     """
     calculate the amplitude assuming the input rmag and concentration follow
     the expected power law
@@ -56,7 +56,7 @@ def get_amp(rmag, conc):
     amp: float
         amplitude of (rmag - OFF)**SLOPE
     """
-    pv = predict(rmag, 1.0)
+    pv = predict(rmag=rmag, amp=1.0)
     amp = (conc/pv).mean()
 
     return amp

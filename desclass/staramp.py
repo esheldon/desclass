@@ -1,20 +1,23 @@
 import numpy as np
 import esutil as eu
 from esutil.numpy_util import between
-import argparse
 
 MAGOFF = 13.5
-INDEX = 1.5
+SLOPE = 1.5
 
 
-def get_amp(*, psf_mag, conc, show=False, output=None):
+def predict(*, rmag, amp):
+    return amp * (rmag - MAGOFF)**SLOPE
+
+
+def get_amp(*, rmag, conc, show=False, output=None):
     """
     get the amplitude of the stellar locus assuming a
     power law distribution A (mag - 13.5)**1.5
 
     Parameters
     ----------
-    psf_mag: array
+    rmag: array
         psf magnitude, should be r band
     conc: array
         concentration parameters for stars
@@ -35,19 +38,19 @@ def get_amp(*, psf_mag, conc, show=False, output=None):
 
     cmin, cmax = -0.0005, 0.0003
     w, = np.where(
-        between(psf_mag, magmin, magmax)
+        between(rmag, magmin, magmax)
         &
         between(conc, cmin, cmax)
     )
 
     hd = eu.stat.histogram(
-        psf_mag[w],
+        rmag[w],
         min=magmin, max=magmax, nbin=nbin,
         more=True,
     )
     herr = np.sqrt(hd['hist'])
 
-    pv = (hd['center'] - MAGOFF)**INDEX
+    pv = predict(rmag=hd['center'], amp=1.0)
     amp = (hd['hist']/pv).mean()
     print('amp:', amp)
 
@@ -57,13 +60,13 @@ def get_amp(*, psf_mag, conc, show=False, output=None):
         plt = hickory.Table(2, 1, figsize=(8, 7))
 
         plt[0].plot(
-            psf_mag,
+            rmag,
             conc,
             marker='.',
             alpha=0.5,
         )
         plt[0].plot(
-            psf_mag[w],
+            rmag[w],
             conc[w],
             marker='.',
             markeredgecolor='black',
@@ -90,7 +93,7 @@ def get_amp(*, psf_mag, conc, show=False, output=None):
         xvals = np.linspace(13.9, 21)
         plt[1].curve(
             xvals,
-            amp*(xvals - MAGOFF)**INDEX
+            predict(rmag=xvals, amp=amp),
         )
         plt[1].set(
             xlabel='psf mag r',
