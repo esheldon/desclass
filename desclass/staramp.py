@@ -107,31 +107,3 @@ def get_amp(*, psf_mag, conc, show=False, output=None):
             plt.savefig(output)
 
     return amp
-
-
-def get_args():
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--flist', nargs='+', required=True)
-    parser.add_argument('--mag-index', type=int, required=True)
-    parser.add_argument('--output')
-    parser.add_argument('--show', action='store_true')
-
-    return parser.parse_args()
-
-
-if __name__ == '__main__':
-    args = get_args()
-    flist = args.flist
-
-    flist.sort()
-    t = eu.io.read(flist)
-    w, = np.where(t['conc_flags'] == 0)
-    print("kept: %d/%d  %g" % (w.size, t.size, w.size/t.size))
-    t = t[w]
-
-    amp = get_amp(
-        psf_mag=t['psf_mag'][:, args.mag_index],
-        conc=t['conc'],
-        output=args.output,
-        show=args.show,
-    )
