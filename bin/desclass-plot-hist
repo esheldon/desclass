@@ -67,14 +67,58 @@ def dohist(ax, conc, hrange, binsize, weight=None):
     )
 
 
-def do_cumhist(ax, binsize, conc, inj_conc, inj_weight):
+def do_cumhist_galfrac(ax, conc, hist, inj_hist, width):
+
+    cumsum = hist.cumsum()
+    inj_cumsum = inj_hist.cumsum()
+    w, = np.where(cumsum > 0)
+
+    frac_gal = 1 - inj_cumsum[w]/cumsum[w]
+
+    ax.curve(
+        conc[w],
+        frac_gal,
+    )
+
+    w, = np.where((conc > 0) & (conc < 2*width))
+    maxval = 1.1*frac_gal[w].max()
+    if maxval < 0:
+        maxval = 0.1
+
+    ax.set_ylim(bottom=0, top=maxval)
+
+
+def do_cumhist_starfrac(ax, conc, hist, inj_hist):
+    # for galaxy we want to reverse it
+    ind = np.arange(conc.size-1, -1, -1)
+    crev = conc[ind]
+    crevhist = hist[ind]
+
+    inj_crevhist = inj_hist[ind]
+
+    rcumsum = crevhist.cumsum()
+    inj_rcumsum = inj_crevhist.cumsum()
+
+    w, = np.where(rcumsum > 0)
+
+    ax.curve(
+        crev[w],
+        inj_rcumsum[w]/rcumsum[w],
+    )
+
+
+def do_cumhist(
+    ax_starfrac, ax_galfrac, binsize, conc, inj_conc, inj_weight, minval,
+    width,
+):
 
     inj_weights = np.zeros(inj_conc.size) + inj_weight
 
-    cmin, cmax = -0.025, 0.05
+    _, cmax = -0.025, 0.05
     hd = eu.stat.histogram(
         conc,
-        min=cmin,
+        # min=cmin,
+        min=minval,
         max=cmax,
         binsize=binsize,
         more=True,
@@ -82,29 +126,22 @@ def do_cumhist(ax, binsize, conc, inj_conc, inj_weight):
     inj_hd = eu.stat.histogram(
         inj_conc,
         weights=inj_weights,
-        min=cmin,
+        # min=cmin,
+        min=minval,
         max=cmax,
         binsize=binsize,
     )
 
     assert hd['center'].size == inj_hd['center'].size
 
-    # for galaxy we want to reverse it
-    ind = np.arange(hd['center'].size-1, -1, -1)
-    crev = hd['center'][ind]
-    crevhist = hd['hist'][ind]
+    for ax in [ax_starfrac, ax_galfrac]:
+        ax.axhline(0.01, color='red', alpha=0.5)
+        ax.axhline(0.005, color='magenta', alpha=0.5)
+        ax.axhline(0.001, color='blue', alpha=0.5)
 
-    inj_crevhist = inj_hd['whist'][ind]
-
-    cumsum = crevhist.cumsum()
-    inj_cumsum = inj_crevhist.cumsum()
-
-    w, = np.where(cumsum > 0)
-
-    ax.curve(
-        crev[w],
-        inj_cumsum[w]/cumsum[w],
-    )
+    do_cumhist_starfrac(ax_starfrac, hd['center'], hd['hist'], inj_hd['whist'])
+    do_cumhist_galfrac(ax_galfrac, hd['center'], hd['hist'], inj_hd['whist'],
+                       width=width)
 
 
 def get_amp(*, args, data):
@@ -129,9 +166,11 @@ def get_amp(*, args, data):
 def main():
     args = get_args()
 
-    figsize = (12, 7)
+    xsize = 15
+    figsize = (xsize, xsize*0.583)
     plt = Table(4, 4, figsize=figsize)
-    cplt = Table(4, 4, figsize=figsize)
+    starfrac_plt = Table(4, 4, figsize=figsize)
+    galfrac_plt = Table(4, 4, figsize=figsize)
 
     flist = args.flist
 
@@ -209,7 +248,8 @@ def main():
         width = 4*inj_std
         if width < 0.0005:
             width = 0.0005
-        hrange = (-width, width)
+        # expand on the right side
+        hrange = (-width, width*2)
         binsize = inj_std/4
 
         ww, = np.where(between(t['conc'][w], -0.0005, 0.0005))
@@ -245,27 +285,55 @@ def main():
             weight=weight,
         )
 
-        do_cumhist(cplt.axes[i], binsize, t['conc'][w], pvals, weight)
-
         label = r'[%.2f, %.2f] $\sigma: %.4g$' % (magmin, magmax, inj_std)
+
+        ax_starfrac = starfrac_plt.axes[i]
+        ax_galfrac = galfrac_plt.axes[i]
+        ax_starfrac.set(
+            xlim=hrange,
+            xlabel='cumulative conc (right)',
+            ylabel='frac stars',
+            title=label,
+        )
+        ax_galfrac.set(
+            # xlim=[0, hrange[1]],
+            xlim=hrange,
+            xlabel='cumulative conc (left)',
+            ylabel='frac gals',
+            title=label,
+        )
+
+        do_cumhist(
+            ax_starfrac, ax_galfrac, binsize, t['conc'][w], pvals, weight,
+            minval=hrange[0],
+            width=width,
+        )
 
         ax.set_title(label)
 
     if args.show:
         plt.show()
-        cplt.show()
+        starfrac_plt.show()
+        galfrac_plt.show()
 
     if args.output is not None:
         print('writing:', args.output)
         plt.savefig(args.output)
 
-        coutput = args.output.replace(
-            '.png', '-cumul.png'
+        soutput = args.output.replace(
+            '.png', '-starfrac.png'
         ).replace(
-            '.pdf', '-cumul.pdf'
+            '.pdf', '-starfrac.pdf'
         )
-        print('writing:', coutput)
-        plt.savefig(coutput)
+        goutput = args.output.replace(
+            '.png', '-galfrac.png'
+        ).replace(
+            '.pdf', '-galfrac.pdf'
+        )
+        print('writing:', soutput)
+        starfrac_plt.savefig(soutput)
+        print('writing:', goutput)
+        galfrac_plt.savefig(goutput)
 
 
 if __name__ == '__main__':
