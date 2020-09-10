@@ -116,7 +116,7 @@ class Stars(object):
 
         mrng = [staramp.MAGOFF, max_inject_rmag]
         self.generator = eu.random.Generator(
-            lambda x: (x - staramp.MAGOFF)**staramp.INDEX,
+            lambda x: (x - staramp.MAGOFF)**staramp.SLOPE,
             xrange=mrng,
             nx=100,
         )
