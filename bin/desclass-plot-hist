@@ -67,6 +67,46 @@ def dohist(ax, conc, hrange, binsize, weight=None):
     )
 
 
+def do_cumhist(ax, binsize, conc, inj_conc, inj_weight):
+
+    inj_weights = np.zeros(inj_conc.size) + inj_weight
+
+    cmin, cmax = -0.025, 0.05
+    hd = eu.stat.histogram(
+        conc,
+        min=cmin,
+        max=cmax,
+        binsize=binsize,
+        more=True,
+    )
+    inj_hd = eu.stat.histogram(
+        inj_conc,
+        weights=inj_weights,
+        min=cmin,
+        max=cmax,
+        binsize=binsize,
+    )
+
+    assert hd['center'].size == inj_hd['center'].size
+
+    # for galaxy we want to reverse it
+    ind = np.arange(hd['center'].size-1, -1, -1)
+    crev = hd['center'][ind]
+    crevhist = hd['hist'][ind]
+
+    inj_crevhist = inj_hd['whist'][ind]
+
+    cumsum = crevhist.cumsum()
+    inj_cumsum = inj_crevhist.cumsum()
+
+    w, = np.where(cumsum > 0)
+
+    ax.curve(
+        crev[w],
+        inj_cumsum[w]/cumsum[w],
+    )
+
+
 def get_amp(*, args, data):
     rmag = get_mag(args=args, data=data)
     if args.output is not None:
@@ -91,6 +131,7 @@ def main():
 
     figsize = (12, 7)
     plt = Table(4, 4, figsize=figsize)
+    cplt = Table(4, 4, figsize=figsize)
 
     flist = args.flist
 
@@ -181,7 +222,6 @@ def main():
 
         center = (magmin + magmax)*0.5
 
-
         label = r'[%.2f, %.2f] $\sigma: %.4g$' % (
             magmin, magmax, inj_std,
         )
@@ -205,16 +245,27 @@ def main():
             weight=weight,
         )
 
+        do_cumhist(cplt.axes[i], binsize, t['conc'][w], pvals, weight)
+
         label = r'[%.2f, %.2f] $\sigma: %.4g$' % (magmin, magmax, inj_std)
 
         ax.set_title(label)
 
     if args.show:
         plt.show()
+        cplt.show()
 
     if args.output is not None:
         print('writing:', args.output)
         plt.savefig(args.output)
+
+        coutput = args.output.replace(
+            '.png', '-cumul.png'
+        ).replace(
+            '.pdf', '-cumul.pdf'
+        )
+        print('writing:', coutput)
+        plt.savefig(coutput)
 
 
 if __name__ == '__main__':
