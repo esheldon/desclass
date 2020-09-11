@@ -1,8 +1,10 @@
 #!/usr/bin/env python
 
+import ngmix
 import numpy as np
 import esutil as eu
 from esutil.numpy_util import between
+import hickory
 from hickory import Table
 from desclass import staramp
 from desclass import bf
@@ -30,6 +32,38 @@ def read(flist):
     t = _read(flist=flist, ext='objects')
     inj = _read(flist=flist, ext='injections')
     return t, inj
+
+
+def fit_gmm(*, data, ngauss, min_covar=1.0e-12, show=False):
+    gmm = ngmix.gmix_ndim.GMixND()
+    gmm.fit(
+        data,
+        ngauss,
+        min_covar=min_covar,
+    )
+
+    if show:
+        nfac = 10
+        r = gmm.sample(data.size*nfac)
+
+        std = data.std()
+        binsize = std/7
+
+        plt = hickory.Plot()
+        plt.hist(
+            data,
+            # min=-0.0005, max=0.0005,
+            binsize=binsize, alpha=0.5,
+        )
+        plt.hist(
+            r,
+            # min=-0.0005, max=0.0005,
+            binsize=binsize,
+            weights=r*0 + 1/nfac, alpha=0.5,
+        )
+        plt.show()
+
+    return gmm
 
 
 def get_mag(*, args, data):
@@ -209,9 +243,11 @@ def main():
     nsig = 3
     magmin, magmax = edges[0]
     # magmin, magmax = 17.0, 18.5
-    magmin, magmax = 17.0, 17.5
+    # magmin, magmax = 17.0, 17.5
+    magmin, magmax = 17.0, 18.0
     w = select(args=args, data=t, magmin=magmin, magmax=magmax)
     ww, = np.where(between(t['conc'][w], -0.0005, 0.0005))
+
     _, ref_std = eu.stat.sigma_clip(t['conc'][w[ww]], nsig=nsig)
 
     # good at the faint end, but more like -2.5e-05 at the bright end ~17
@@ -230,6 +266,15 @@ def main():
     # got using code in bf.py
     bf_amp = -3.6e-06
 
+    gmm = fit_gmm(
+        data=t['conc'][w[ww]],
+        ngauss=4,
+        show=args.show,
+        # min_covar=ref_std**2,
+    )
+    gmm_samples = gmm.sample(100000)
+    gmm_std = gmm_samples.std()
+
     for i in range(len(edges)):
         magmin, magmax = edges[i]
 
@@ -242,9 +287,16 @@ def main():
 
         winj = select(args=args, data=inj, magmin=magmin, magmax=magmax)
         inj_mn, inj_std0 = eu.stat.sigma_clip(inj['conc'][winj], nsig=nsig)
+
+
         # print('inj', inj_mn, inj_std)
 
         inj_std = np.sqrt(inj_std0**2 + ref_std**2)
+
+        if i == 0:
+            save_inj_std0 = inj_std0
+            save_inj_std = inj_std
+
         width = 4*inj_std
         if width < 0.0005:
             width = 0.0005
@@ -270,20 +322,53 @@ def main():
         # extra scatter, presumably due to scatter in the PSF
 
         bf_offset = bf.predict(rmag=center, amp=bf_amp)
-        pvals = bf_offset + inj['conc'][winj] + np.random.normal(
-            scale=ref_std, size=winj.size,
-        )
 
         # re-weight to get the right density
         predicted = staramp.predict(rmag=center, amp=amp)
-        weight = predicted / winj.size
 
-        dohist(
-            ax,
-            pvals,
-            hrange, binsize,
-            weight=weight,
-        )
+        if False:
+            # if inj_std0 > gmm_std:
+            #     fac = (inj_std0/gmm_std)**2
+            # else:
+            #     fac = 1
+
+            # fac = (inj_std0/save_inj_std0)**2
+            fac = inj_std/save_inj_std
+            if fac < 1:
+                fac = 1
+
+            print('fac:', fac)
+
+            new_gmm = ngmix.gmix_ndim.GMixND(
+                weights=gmm.weights,
+                means=gmm.means + bf_offset,
+                covars=gmm.covars*fac**2,
+            )
+
+            num = 10000
+            pvals = new_gmm.sample(num)
+            # pvals = new_gmm.sample(num) + np.random.normal(
+            #     scale=ref_std, size=num,
+            # )
+            weight = predicted / num
+
+            # pvals = inj['conc'][winj] + new_gmm.sample(winj.size)
+            # weight = predicted / winj.size
+
+            dohist(ax, pvals, hrange, binsize, weight=weight)
+
+        else:
+            pvals = bf_offset + inj['conc'][winj] + np.random.normal(
+                scale=ref_std, size=winj.size,
+            )
+
+            weight = predicted / winj.size
+            dohist(
+                ax,
+                pvals,
+                hrange, binsize,
+                weight=weight,
+            )
 
         label = r'[%.2f, %.2f] $\sigma: %.4g$' % (magmin, magmax, inj_std)
 

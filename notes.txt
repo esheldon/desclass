@@ -1,0 +1,15 @@
+- collate tiles
+- fit star amp separately on each tile and save or make
+  code aware somehow
+- maybe try using gmms from hsc stars as a function of mag
+    - below 19 can probably just git gmms directly to objects
+    within some conc range
+    - above use fits from hsc?
+
+
+things I tried to make a bump at T=0
+    - bad sky sub (at 0.1 noise level +/-)
+    - cosmics
+    - guessing near 0
+    - no buffer region around image, so objects can be on the edge
+    - single stamps with no offset
