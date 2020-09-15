@@ -1,12 +1,17 @@
 import numpy as np
 import esutil as eu
 from esutil.numpy_util import between
+from ngmix.fitting import run_leastsq, print_pars
 
 MAGOFF = 13.5
 SLOPE = 1.5
-MAGMIN, MAGMAX = 16.5, 19.5
-NBIN = 6
-CMIN, CMAX = -0.0005, 0.0003
+# MAGMIN, MAGMAX = 16.5, 19.5
+# NBIN = 6
+# MAGMIN, MAGMAX = 16.5, 21.5
+# NBIN = 10
+MAGMIN, MAGMAX = 16.5, 20.5
+NBIN = 8
+CMIN, CMAX = 0.005, 0.03
 
 
 def predict(*, rmag, amp, amp_err=None):
@@ -34,7 +39,7 @@ def predict(*, rmag, amp, amp_err=None):
         return num
 
 
-def calculate_amp(*, rmag, conc):
+def calculate_amp(*, rmag, num):
     """
     calculate the amplitude assuming a relationship of
         num = amp * (rmag - MAGOFF)**SLOPE
@@ -44,8 +49,8 @@ def calculate_amp(*, rmag, conc):
     ----------
     rmag: array
         rmag in bins
-    conc: array
-        concentration in bins
+    num: array
+        number in each bin
 
     Returns
     -------
@@ -53,12 +58,51 @@ def calculate_amp(*, rmag, conc):
         Amplitude and uncertainty
     """
     pv = predict(rmag=rmag, amp=1.0)
-    amp = (conc/pv).mean()
-    amp_err = (conc/pv).std()
+    amp = (num/pv).mean()
+    amp_err = (num/pv).std()
     return amp, amp_err
 
 
-def get_amp(*, rmag, conc, show=False, output=None):
+def exp_func(pars, x):
+    amp = pars[0]
+    off = pars[1]
+    sigma = pars[2]
+    platform = pars[3]
+
+    try:
+        _ = len(x)
+        scalar = False
+    except TypeError:
+        scalar = True
+        x = np.array(x, ndmin=1)
+
+    model = np.zeros(x.size) + platform
+    w, = np.where(x > off)
+    if w.size > 0:
+        arg = ((x[w] - off)/sigma)**2
+        model[w] += amp * (np.exp(arg) - 1)
+
+    if scalar:
+        model = model[0]
+
+    return model
+
+
+def fit_exp_binned(x, y, yerr, guess):
+    # assume quadratic
+
+    def loss(pars):
+        model = exp_func(pars, x)
+        return (model - y)/yerr
+
+    return run_leastsq(
+        loss,
+        np.array(guess),
+        0,
+    )
+
+
+def fit_exp(*, rmag, conc, show=False, output=None):
     """
     get the amplitude of the stellar locus assuming a
     power law distribution A (mag - 13.5)**1.5  The data are binned
@@ -92,11 +136,16 @@ def get_amp(*, rmag, conc, show=False, output=None):
         min=MAGMIN, max=MAGMAX, nbin=NBIN,
         more=True,
     )
-    herr = np.sqrt(hd['hist'])
 
-    amp, amp_err = calculate_amp(rmag=hd['center'], conc=hd['hist'])
+    num = hd['hist']
+    num_err = np.sqrt(num)
+    guess = [1000, 18, 4, num[:4].mean()]
+    res = fit_exp_binned(hd['center'], num, num_err, guess)
+    print_pars(res['pars'], front='pars: ')
+    print_pars(res['pars_err'], front='pars: ')
 
-    print('amp: %g +/- %g' % (amp, amp_err))
+    if res['flags'] != 0:
+        raise RuntimeError('fit failed')
 
     if show or output is not None:
         import hickory
@@ -118,8 +167,8 @@ def get_amp(*, rmag, conc, show=False, output=None):
         )
 
         plt[0].set(
-            xlim=(16, 20),
-            ylim=(-0.002, 0.005)
+            xlim=(MAGMIN-0.5, MAGMAX+0.5),
+            ylim=(-0.0005, CMAX),
         )
 
         plt[0].set(
@@ -127,22 +176,30 @@ def get_amp(*, rmag, conc, show=False, output=None):
             ylabel='conc',
         )
 
-        predicted = predict(rmag=hd['center'], amp=amp)
         plt[1].errorbar(
             hd['center'],
-            hd['hist'],
-            yerr=herr,
+            num,
+            yerr=num_err,
         )
+
+        predicted = exp_func(res['pars'], hd['center'])
+
+        eu.misc.colprint(num, predicted, num_err,
+                         format='%20s',
+                         names=['num', 'pred', 'num_err'])
+
         plt[1].curve(hd['center'], predicted)
-        xvals = np.linspace(13.9, 21)
+        xvals = np.linspace(13.9, MAGMAX+0.5)
         plt[1].curve(
             xvals,
-            predict(rmag=xvals, amp=amp),
+            exp_func(res['pars'], xvals),
         )
         plt[1].set(
             xlabel='psf mag r',
             ylabel='Number',
-            xlim=(13.5, 21),
+            xlim=(MAGMIN-0.5, MAGMAX+0.5),
+            yscale='log',
+            # xlim=(13.5, MAGMAX+0.5),
         )
 
         if show:
@@ -152,4 +209,4 @@ def get_amp(*, rmag, conc, show=False, output=None):
             print('writing:', output)
             plt.savefig(output)
 
-    return amp, amp_err
+    return res['pars']

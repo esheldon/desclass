@@ -13,4 +13,6 @@ from . import outputs
 from . import priors
 from . import psf_flux
 from . import staramp
+from . import galamp
+from . import fithist
 from . import util
