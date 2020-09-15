@@ -264,11 +264,12 @@ def main():
     print('ref std:', ref_std)
 
     # got using code in bf.py
-    bf_amp = -3.6e-06
+    # bf_amp = -3.6e-06
+    bf_amp = -5e-06
 
     gmm = fit_gmm(
         data=t['conc'][w[ww]],
-        ngauss=4,
+        ngauss=2,
         show=args.show,
         # min_covar=ref_std**2,
     )
