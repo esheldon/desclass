@@ -1,12 +1,12 @@
 import numpy as np
-# import esutil as eu
+import esutil as eu
 from esutil.numpy_util import between
 import fitsio
 # import hickory
 # import scipy.optimize
 # from ngmix import print_pars
 from . import staramp
-from . import galamp
+# from . import galamp
 from . import cem
 
 
@@ -61,6 +61,11 @@ def _gal_mean1_vs_rmag(*, rmag):
 
 
 def get_gal_priors(*, rng, data, rmag, ngal, ngal_err, ngauss):
+    """
+    get star priors.  The gaussian pdfs are used for generating
+    guesses with bounds, only the bounds themselves are used in
+    the EM algorithm
+    """
     if ngauss == 1:
         frac1 = 1
     elif ngauss == 2:
@@ -171,6 +176,12 @@ def get_gal_priors(*, rng, data, rmag, ngal, ngal_err, ngauss):
 
 
 def get_star_priors(*, rng, data, rmag, nstar, nstar_err):
+    """
+    get star priors.  The gaussian pdfs are used for generating
+    guesses with bounds, only the bounds themselves are used in
+    the EM algorithm
+
+    """
     frac1 = 0.85
     frac2 = 1 - frac1
 
@@ -368,12 +379,13 @@ class Fitter(object):
         self, *,
         min=None,
         max=None,
-        data=None,
         nbin=None,
-        binsize=None,
+        binsize=0.0004,
+        figsize=(10, 7.5),
         file=None,
         dpi=100,
         show=False,
+        plt=None,
         **plot_kws
     ):
         """
@@ -388,8 +400,6 @@ class Fitter(object):
         max: float
             Max value to plot, if data is sent then this can be left
             out and the max value will be gotten from that data.
-        data: array, optional
-            Optional data to plot as a histogram
         nbin: int, optional
             Optional number of bins for histogramming data
         binsize: float, optional
@@ -416,11 +426,114 @@ class Fitter(object):
             file=file,
             dpi=dpi,
             show=show,
+            plt=plt,
             **plot_kws
         )
 
+    def plot3(
+        self, *,
+        label=None,
+        show=False,
+        file=None,
+        dpi=100,
+        **plot_kws
+    ):
+        """
+        plot the model and each component.  Optionally plot a set of
+        data as well.  Currently only works for 1d
 
-def fit_conc_dist(*, data, prior_file, rmag_index, seed):
+        Parameters
+        ----------
+        min: float
+            Min value to plot, if data is sent then this can be left
+            out and the min value will be gotten from that data.
+        max: float
+            Max value to plot, if data is sent then this can be left
+            out and the max value will be gotten from that data.
+        nbin: int, optional
+            Optional number of bins for histogramming data
+        binsize: float, optional
+            Optional binsize for histogramming data
+        file: str, optional
+            Optionally write out a plot file
+        dpi: int, optional
+            Optional dpi for graphics like png, default 100
+        show: bool, optional
+            If True, show the plot on the screen
+
+        Returns
+        -------
+        plot object
+        """
+
+        import hickory
+        tab = hickory.Table(
+            figsize=(10, 7.5),
+            nrows=2,
+            ncols=2,
+        )
+        tab[1, 1].axis('off')
+        tab[0, 0].set(xlabel='concentration')
+        tab[0, 1].set(xlabel='concentration')
+        tab[1, 0].set(xlabel='concentration')
+
+        tab[1, 1].ntext(0.5, 0.5, label,
+                        horizontalalignment='center',
+                        verticalalignment='center',
+                        fontsize=16)
+        binsize = 0.0004
+        binsize_coarse = 0.0004 * 2
+        maxconc = 0.025
+
+        self.plot(
+            binsize=binsize,
+            xlabel='concentration',
+            legend=True,
+            plt=tab[0, 0],
+            show=False,
+        )
+        tab[0, 0].legend()
+
+        star_samples = cem.gmix_sample(
+            self.gmix,
+            self.rng,
+            size=1000,
+            components=[0, 1],
+        )
+
+        smn, ssig = eu.stat.sigma_clip(star_samples)
+        xlim = (smn - 4*ssig, smn + 4*ssig)
+        star_binsize = ssig/5
+
+        tab[0, 1].set(xlim=xlim)
+        self.plot(
+            binsize=star_binsize,
+            legend=True,
+            xlim=xlim,
+            plt=tab[0, 1],
+            show=False,
+        )
+
+        cmin, cmax = 0.0005, maxconc
+        self.plot(
+            binsize=binsize_coarse,
+            min=cmin,
+            max=cmax,
+            xlabel='concentration',
+            legend=True,
+            plt=tab[1, 0],
+            show=False,
+            xlim=(cmin, cmax),
+        )
+
+        if show:
+            tab.show()
+
+        if file is not None:
+            tab.savefig(file, dpi=dpi)
+
+
+def fit_conc_dist(*, data, prior_file, rmag_index, seed, show=False):
 
     rng = np.random.RandomState(seed)
 
@@ -429,8 +542,6 @@ def fit_conc_dist(*, data, prior_file, rmag_index, seed):
     prior_data = fitsio.read(prior_file)
 
     edges = [
-        # (16.5, 17.0),
-
         (17.0, 17.5),
         (17.5, 18.0),
         (18.0, 18.5),
@@ -448,12 +559,6 @@ def fit_conc_dist(*, data, prior_file, rmag_index, seed):
         (23.5, 24.0),
         (24, 24.5),
     ]
-    # edges = [
-    #     (23, 23.5),
-    #     (23.5, 24.0),
-    #     (24, 24.5),
-    # ]
-    #
 
     rmag_centers = np.array(
         [0.5*(rmagmin + rmagmax) for rmagmin, rmagmax in edges]
@@ -463,12 +568,7 @@ def fit_conc_dist(*, data, prior_file, rmag_index, seed):
     initial_amp, initial_amp_err = staramp.get_amp(
         rmag=data['psf_mag'][:, rmag_index],
         conc=data['conc'],
-        # show=True,
-    )
-    gal_num_pars = galamp.fit_exp(
-        rmag=data['psf_mag'][:, rmag_index],
-        conc=data['conc'],
-        # show=True,
+        show=show,
     )
 
     init_nstar, init_nstar_err = staramp.predict(
@@ -476,10 +576,15 @@ def fit_conc_dist(*, data, prior_file, rmag_index, seed):
         amp=initial_amp,
         amp_err=initial_amp_err,
     )
-    init_ngal = galamp.exp_func(gal_num_pars, rmag_centers)
-    # init_ngal[0] = galamp.exp_func(gal_num_pars, 18.5)
 
-    init_ngal_err = np.sqrt(init_ngal)
+    # gal_num_pars = galamp.fit_exp(
+    #     rmag=data['psf_mag'][:, rmag_index],
+    #     conc=data['conc'],
+    #     show=show,
+    # )
+    #
+    # init_ngal = galamp.exp_func(gal_num_pars, rmag_centers)
+    # init_ngal_err = np.sqrt(init_ngal)
 
     # init_ngal_err *= 10
     # init_nstar_err *= 10
@@ -489,16 +594,10 @@ def fit_conc_dist(*, data, prior_file, rmag_index, seed):
         rmagmin, rmagmax = edges[i]
         rmag = 0.5*(rmagmin + rmagmax)
         label = 'rmag: [%.2f, %.2f]' % (rmagmin, rmagmax)
-
-        binsize_fine = 0.00005
-        binsize_coarse = 0.0004
-        binsize_coarser = 0.0004 * 2
-
-        # off = 0.007
-        # power = 0.5
+        print('-'*70)
+        print(label)
 
         minconc, maxconc = -0.01, 0.025
-        # minconc, maxconc = -0.0005, 0.01
         w, = np.where(
             between(data['psf_mag'][:, rmag_index], rmagmin, rmagmax) &
             between(data['conc'], minconc, maxconc)
@@ -520,42 +619,14 @@ def fit_conc_dist(*, data, prior_file, rmag_index, seed):
 
         ngal_predicted = w.size - nstar_predicted
         if ngal_predicted < 3:
-            ngal_predicted = init_ngal[i]
-            if ngal_predicted < 3:
-                ngal_predicted = 3
+            ngal_predicted = 3
 
         gal_priors = get_gal_priors(
             rng=rng, data=prior_data, rmag=rmag,
-            ngal=ngal_predicted, ngal_err=init_ngal_err[i],
+            ngal=ngal_predicted,
+            ngal_err=np.sqrt(ngal_predicted),
             ngauss=gal_ngauss,
         )
-
-        # import esutil as eu
-        # import hickory
-        # hd = eu.stat.histogram(
-        #     data['conc'][w],
-        #     min=minconc,
-        #     max=maxconc,
-        #     binsize=binsize_fine,
-        #     more=True,
-        # )
-        # plt = hickory.Plot(title=label, xlabel='concentration')
-        # plt.bar(hd['center'], hd['hist'], width=binsize_fine)
-        # plt.show()
-        # hd_coarse = eu.stat.histogram(
-        #     data['conc'][w],
-        #     min=minconc,
-        #     max=maxconc,
-        #     binsize=binsize_coarse,
-        #     more=True,
-        # )
-        # hd_coarser = eu.stat.histogram(
-        #     data['conc'][w],
-        #     min=minconc,
-        #     max=maxconc,
-        #     binsize=binsize_coarser,
-        #     more=True,
-        # )
 
         fitter = Fitter(
             data=data['conc'][w],
@@ -581,32 +652,7 @@ def fit_conc_dist(*, data, prior_file, rmag_index, seed):
         print('nstar pred: %g nstar meas: %g' % (nstar_predicted, nstar_meas))
         print('ngal pred: %g ngal meas: %g' % (ngal_predicted, ngal_meas))
 
-        fitter.plot(
-            figsize=(10, 7.5),
-            binsize=binsize_coarse,
-            xlabel='concentration',
-            legend=True, show=True,
-            title=label,
-            xlim=(-0.005, 0.025),
-        )
-
-        splt = fitter.plot(
-            figsize=(10, 7.5),
-            binsize=binsize_fine,
-            legend=True, show=False,
-            title=label,
-            xlim=(-0.003, 0.003),
-        )
-        splt.show()
-
-        cmin, cmax = 0.0005, 0.025
-        fitter.plot(
-            figsize=(10, 7.5),
-            binsize=binsize_coarser,
-            min=cmin,
-            max=cmax,
-            xlabel='concentration',
-            legend=True, show=True,
-            title=label,
-            xlim=(cmin, cmax),
-        )
+        if rmag > 23.5:
+            fitter.plot(title=label, show=show)
+        else:
+            fitter.plot3(label=label, show=show)

@@ -116,6 +116,7 @@ def plot_gmix(
     file=None,
     dpi=100,
     show=False,
+    plt=None,
     **plot_kws,
 ):
     """
@@ -154,7 +155,8 @@ def plot_gmix(
     import esutil as eu
     import hickory
 
-    plt = hickory.Plot(**plot_kws)
+    if plt is None:
+        plt = hickory.Plot(**plot_kws)
 
     if data is not None:
 
@@ -218,7 +220,7 @@ def plot_gmix(
     return plt
 
 
-def gmix_sample(gmix, rng, size=None):
+def gmix_sample(gmix, rng, size=None, components=None):
     """
     sample from a gaussian mixture
 
@@ -243,9 +245,12 @@ def gmix_sample(gmix, rng, size=None):
     else:
         scalar = False
 
-    weights = gmix['num']/gmix['num'].sum()
-    means = gmix['mean']
-    sigmas = gmix['sigmas']
+    if components is None:
+        components = np.arange(gmix.size)
+
+    weights = gmix['num'][components]/gmix['num'][components].sum()
+    means = gmix['mean'][components]
+    sigmas = gmix['sigma'][components]
 
     component_sizes = rng.multinomial(size, weights)
 
