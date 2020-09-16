@@ -127,11 +127,11 @@ def get_struct(*, size, star_ngauss, gal_ngauss):
 
         ('star_weights', 'f8', star_ngauss),
         ('star_means', 'f8', star_ngauss),
-        ('star_covars', 'f8', star_ngauss),
+        ('star_sigmas', 'f8', star_ngauss),
 
         ('gal_weights', 'f8', gal_ngauss),
         ('gal_means', 'f8', gal_ngauss),
-        ('gal_covars', 'f8', gal_ngauss),
+        ('gal_sigmas', 'f8', gal_ngauss),
     ]
     return np.zeros(size, dtype=dt)
 
@@ -150,42 +150,18 @@ def pack_struct(*, rmagmin, rmagmax, star_gmm, gal_gmm):
     s = (-star_gmm.weights.ravel()).argsort()
     struct['star_weights'][0] = star_gmm.weights.ravel()[s]
     struct['star_means'][0] = star_gmm.means.ravel()[s]
-    struct['star_covars'][0] = star_gmm.covars.ravel()[s]
+    struct['star_sigmas'][0] = np.sqrt(
+        star_gmm.covars.ravel()[s]
+    )
 
     s = (-gal_gmm.weights.ravel()).argsort()
     struct['gal_weights'][0] = gal_gmm.weights.ravel()[s]
     struct['gal_means'][0] = gal_gmm.means.ravel()[s]
-    struct['gal_covars'][0] = gal_gmm.covars.ravel()[s]
+    struct['gal_sigmas'][0] = np.sqrt(
+        gal_gmm.covars.ravel()[s]
+    )
 
     return struct
-
-
-def expfunc(pars, x):
-    amp = pars[0]
-    off = pars[1]
-    sigma = pars[2]
-
-    model = np.zeros(x.size)
-    w, = np.where(x > off)
-    if w.size > 0:
-        arg = ((x[w] - off)/sigma)**2
-        model[w] = amp * np.exp(arg)
-
-    return model
-
-
-def fitexp(x, y, guess):
-    # assume quadratic
-
-    def loss(pars):
-        model = expfunc(pars, x)
-        return (model - y)
-
-    return run_leastsq(
-        loss,
-        np.array(guess),
-        0,
-    )
 
 
 def plot_all(*, struct, type, show=False, output=None):
@@ -213,7 +189,7 @@ def plot_all(*, struct, type, show=False, output=None):
     )
     tab[1, 0].set(
         xlabel='r mag',
-        ylabel=r'$\sigma^2$',
+        ylabel=r'$\sigma$',
     )
 
     centers = struct['rmag_centers']
@@ -223,7 +199,7 @@ def plot_all(*, struct, type, show=False, output=None):
 
         weights = struct['%s_weights' % type][:, igauss]
         means = struct['%s_means' % type][:, igauss]
-        covars = struct['%s_covars' % type][:, igauss]
+        sigmas = struct['%s_sigmas' % type][:, igauss]
 
         wmean = weights.mean()
         print(type, igauss, wmean)
@@ -234,29 +210,15 @@ def plot_all(*, struct, type, show=False, output=None):
             poly = np.poly1d(np.polyfit(centers, means, 2))
             print(poly)
             tab[0, 1].curve(centers, poly(centers), color='black')
-        else:
-            res = fitexp(centers, means, [0.0005, 18, 4])
-
-            tab[0, 1].curve(centers, expfunc(res['pars'], centers),
-                            color='black', linestyle='solid')
-            print('means pars:', res['pars'])
 
         tab[0, 1].curve(centers, means, marker='o', markersize=1.5)
-
-        if type == 'star':
-            res = fitexp(centers, covars, [0.3e-6, 18, 3])
-
-            if res['flags'] == 0:
-                tab[1, 0].curve(centers, expfunc(res['pars'], centers),
-                                color='black', linestyle='solid')
-
-            print('covars pars:', res['pars'])
-
-        tab[1, 0].curve(centers, covars, marker='o', markersize=1.5)
+        tab[1, 0].curve(centers, sigmas, marker='o', markersize=1.5)
 
     if show:
         tab.show()
+
     if output is not None:
+        print('writing:', output)
         tab.savefig(output, dpi=100)
 
 
@@ -371,8 +333,8 @@ def fit_priors(*, seed, file, rmag_index, show=False):
     gal_pdf_file = get_output_file(
         infile=file, extra='gal-trends', ext='pdf',
     )
-    plot_all(struct=struct, type='star', output=star_pdf_file)
-    plot_all(struct=struct, type='gal', output=gal_pdf_file)
+    plot_all(struct=struct, type='star', output=star_pdf_file, show=show)
+    plot_all(struct=struct, type='gal', output=gal_pdf_file, show=show)
 
     outfile = get_output_file(infile=file)
     print('writing:', outfile)

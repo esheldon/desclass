@@ -16,3 +16,6 @@ from . import staramp
 from . import galamp
 from . import fithist
 from . import util
+
+from . import cem
+from . import fit_conc_dist
