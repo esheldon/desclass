@@ -183,8 +183,8 @@ def get_star_priors(*, rng, data, rmag, nstar, nstar_err):
     num1_prior = GaussianPrior(
         mean=num1,
         sigma=num1_err,
-        # bounds=[0.95*num1, 1.05*num1],
-        bounds=[0.1*num1, 2*num1],
+        bounds=[0.95*num1, 1.05*num1],
+        # bounds=[0.1*num1, 2*num1],
         rng=rng,
     )
     num2 = frac2*nstar
@@ -192,8 +192,8 @@ def get_star_priors(*, rng, data, rmag, nstar, nstar_err):
     num2_prior = GaussianPrior(
         mean=num2,
         sigma=num2_err,
-        # bounds=[0.95*num2, 1.05*num2],
-        bounds=[0.1*num2, 2*num2],
+        bounds=[0.95*num2, 1.05*num2],
+        # bounds=[0.1*num2, 2*num2],
         rng=rng,
     )
 
@@ -203,7 +203,9 @@ def get_star_priors(*, rng, data, rmag, nstar, nstar_err):
         mean=mean1,
         sigma=abs(mean_sigma_frac*mean1),
         # bounds=[-0.002, 0.0],
-        bounds=[mean1 - 0.1*abs(mean1), mean1 + 0.1*abs(mean1)],
+        bounds=[mean1 - 0.5*abs(mean1), mean1 + 0.5*abs(mean1)],
+        # bounds=[mean1 - mean_sigma_frac**abs(mean1),
+        #         mean1 + mean_sigma_frac*abs(mean1)],
         rng=rng,
     )
 
@@ -212,7 +214,9 @@ def get_star_priors(*, rng, data, rmag, nstar, nstar_err):
         mean=mean2,
         sigma=abs(mean_sigma_frac*mean2),
         # bounds=[0.0, 0.0055],
-        bounds=[mean2 - 0.1*abs(mean2), mean2 + 0.1*abs(mean2)],
+        bounds=[mean2 - 0.5*abs(mean2), mean2 + 0.1*abs(mean2)],
+        # bounds=[mean2 - mean_sigma_frac**abs(mean2),
+        #         mean2 + mean_sigma_frac*abs(mean2)],
         rng=rng,
     )
 
