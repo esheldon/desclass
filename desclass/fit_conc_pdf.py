@@ -603,7 +603,7 @@ def fit_conc_pdf(*, data, prior_file, rmag_index, seed, output, show=False):
     for i in range(len(edges)):
         rmagmin, rmagmax = edges[i]
         rmag = 0.5*(rmagmin + rmagmax)
-        label = 'rmag: [%.2f, %.2f]' % (rmagmin, rmagmax)
+        label = r'$%.2f < r < %.2f$' % (rmagmin, rmagmax)
         print('-'*70)
         print(label)
 
