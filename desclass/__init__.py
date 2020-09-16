@@ -18,4 +18,4 @@ from . import fithist
 from . import util
 
 from . import cem
-from . import fit_conc_dist
+from . import fit_conc_pdf

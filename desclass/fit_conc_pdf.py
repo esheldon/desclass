@@ -530,10 +530,17 @@ class Fitter(object):
             tab.show()
 
         if file is not None:
+            print('writing:', file)
             tab.savefig(file, dpi=dpi)
 
 
-def fit_conc_pdf(*, data, prior_file, rmag_index, seed, show=False):
+def replace_ext(fname, old_ext, new_ext):
+    new_fname = fname.replace(old_ext, new_ext)
+    assert new_fname != fname
+    return new_fname
+
+
+def fit_conc_pdf(*, data, prior_file, rmag_index, seed, output, show=False):
 
     rng = np.random.RandomState(seed)
 
@@ -566,9 +573,11 @@ def fit_conc_pdf(*, data, prior_file, rmag_index, seed, show=False):
     )
 
     # initial estimate of N(mag) for stars
+    amp_pdf = replace_ext(output, '.fits', '-staramp.pdf')
     initial_amp, initial_amp_err = staramp.get_amp(
         rmag=data['psf_mag'][:, rmag_index],
         conc=data['conc'],
+        output=amp_pdf,
         show=show,
     )
 
@@ -653,7 +662,15 @@ def fit_conc_pdf(*, data, prior_file, rmag_index, seed, show=False):
         print('nstar pred: %g nstar meas: %g' % (nstar_predicted, nstar_meas))
         print('ngal pred: %g ngal meas: %g' % (ngal_predicted, ngal_meas))
 
+        hist_pdf = replace_ext(
+            output,
+            '.fits',
+            '-compare-%.2f-%.2f.pdf' % (rmagmin, rmagmax)
+        )
         if rmag > 23.5:
-            fitter.plot(title=label, show=show)
+            fitter.plot(title=label, show=show, file=hist_pdf)
         else:
-            fitter.plot3(label=label, show=show)
+            fitter.plot3(label=label, show=show, file=hist_pdf)
+
+    # print('writing:', output)
+    # fitsio.write(output, gmixes, clobber=True)

@@ -215,6 +215,7 @@ def plot_gmix(
         plt.show()
 
     if file is not None:
+        print('writing:', file)
         plt.savefig(file, dpi=dpi)
 
     return plt
