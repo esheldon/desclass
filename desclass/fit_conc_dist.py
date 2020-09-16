@@ -533,7 +533,7 @@ class Fitter(object):
             tab.savefig(file, dpi=dpi)
 
 
-def fit_conc_dist(*, data, prior_file, rmag_index, seed, show=False):
+def fit_conc_pdf(*, data, prior_file, rmag_index, seed, show=False):
 
     rng = np.random.RandomState(seed)
 
@@ -542,6 +542,7 @@ def fit_conc_dist(*, data, prior_file, rmag_index, seed, show=False):
     prior_data = fitsio.read(prior_file)
 
     edges = [
+        (16.5, 17.0),
         (17.0, 17.5),
         (17.5, 18.0),
         (18.0, 18.5),
