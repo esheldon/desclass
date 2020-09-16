@@ -9,6 +9,8 @@ from . import staramp
 # from . import galamp
 from . import cem
 
+from matplotlib.backends.backend_pdf import PdfPages
+
 
 class GaussianPrior(object):
     def __init__(self, *, mean, sigma, bounds, rng):
@@ -533,6 +535,8 @@ class Fitter(object):
             print('writing:', file)
             tab.savefig(file, dpi=dpi)
 
+        return tab
+
 
 def replace_ext(fname, old_ext, new_ext):
     new_fname = fname.replace(old_ext, new_ext)
@@ -543,6 +547,10 @@ def replace_ext(fname, old_ext, new_ext):
 def fit_conc_pdf(*, data, prior_file, rmag_index, seed, output, show=False):
 
     rng = np.random.RandomState(seed)
+
+    pdf_file = replace_ext(output, '.fits', '-plots.pdf')
+    print('writing to pdf file:', pdf_file)
+    pdf = PdfPages(pdf_file)
 
     data = data[data['flags'] == 0]
 
@@ -573,13 +581,13 @@ def fit_conc_pdf(*, data, prior_file, rmag_index, seed, output, show=False):
     )
 
     # initial estimate of N(mag) for stars
-    amp_pdf = replace_ext(output, '.fits', '-staramp.pdf')
-    initial_amp, initial_amp_err = staramp.get_amp(
+    initial_amp, initial_amp_err, plt = staramp.get_amp(
         rmag=data['psf_mag'][:, rmag_index],
         conc=data['conc'],
-        output=amp_pdf,
         show=show,
+        get_plot=True,
     )
+    pdf.savefig(figure=plt)
 
     init_nstar, init_nstar_err = staramp.predict(
         rmag=rmag_centers,
@@ -662,15 +670,14 @@ def fit_conc_pdf(*, data, prior_file, rmag_index, seed, output, show=False):
         print('nstar pred: %g nstar meas: %g' % (nstar_predicted, nstar_meas))
         print('ngal pred: %g ngal meas: %g' % (ngal_predicted, ngal_meas))
 
-        hist_pdf = replace_ext(
-            output,
-            '.fits',
-            '-compare-%.2f-%.2f.pdf' % (rmagmin, rmagmax)
-        )
         if rmag > 23.5:
-            fitter.plot(title=label, show=show, file=hist_pdf)
+            plt = fitter.plot(title=label, show=show)  # , file=hist_pdf)
         else:
-            fitter.plot3(label=label, show=show, file=hist_pdf)
+            plt = fitter.plot3(label=label, show=show)  # , file=hist_pdf)
 
+        pdf.savefig(figure=plt)
+
+    print('closing pdf file:', pdf_file)
+    pdf.close()
     # print('writing:', output)
     # fitsio.write(output, gmixes, clobber=True)

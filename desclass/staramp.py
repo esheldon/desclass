@@ -58,7 +58,7 @@ def calculate_amp(*, rmag, conc):
     return amp, amp_err
 
 
-def get_amp(*, rmag, conc, show=False, output=None):
+def get_amp(*, rmag, conc, show=False, output=None, get_plot=False):
     """
     get the amplitude of the stellar locus assuming a
     power law distribution A (mag - 13.5)**1.5  The data are binned
@@ -98,7 +98,7 @@ def get_amp(*, rmag, conc, show=False, output=None):
 
     print('amp: %g +/- %g' % (amp, amp_err))
 
-    if show or output is not None:
+    if show or output is not None or get_plot:
         import hickory
         # alpha = 0.5
         plt = hickory.Table(2, 1, figsize=(8, 7))
@@ -152,4 +152,7 @@ def get_amp(*, rmag, conc, show=False, output=None):
             print('writing:', output)
             plt.savefig(output)
 
-    return amp, amp_err
+    if get_plot:
+        return amp, amp_err, plt
+    else:
+        return amp, amp_err
