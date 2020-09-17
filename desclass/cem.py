@@ -9,6 +9,9 @@ GAUSS_DTYPE = [
     ('sigma', 'f8'),
     ('icovar', 'f8'),
     ('norm', 'f8'),
+
+    # not used in processing but useful later
+    ('weight', 'f8'),
 ]
 
 
@@ -95,6 +98,7 @@ def run_em(
 
         loglike_old = loglike
 
+    gmix_set_weights(gmix)
     info = {
         'converged': converged,
         'numiter': i+1,
@@ -343,6 +347,7 @@ def gauss_set(gauss, num, mean, sigma):
     gauss['sigma'] = sigma
     gauss['icovar'] = 1/sigma**2
     gauss['norm'] = num/np.sqrt(2 * np.pi)/sigma
+    gauss['weight'] = -np.inf
 
 
 def gauss_eval(gauss, x):
@@ -482,6 +487,27 @@ def gmix_eval_array(gmix, x):
         output[ix] = gmix_eval_scalar(gmix, x[ix])
 
     return output
+
+
+def gmix_set_weights(gmix):
+    """
+    set the weight field in each gaussian.  We use raw number
+    in the fitting but the weight is also useful num/sum(num)
+
+    Parameters
+    ----------
+    gmix: the gaussian mixture
+        The mixture to evaluate
+
+    Returns
+    -------
+    None
+    """
+    nsum = gmix['num'].sum()
+    if nsum > 0:
+        gmix['weight'] = gmix['num']/nsum
+    else:
+        gmix['weight'] = 0
 
 
 @njit
@@ -667,10 +693,6 @@ def do_m_step(gmix, x, T):
             mean_new,
             sigma_new,
         )
-        # print('new', igauss)
-        # gauss_print(gauss)
-
-    # input('hit a key')
 
 
 def _apply_constraints(
