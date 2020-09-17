@@ -774,9 +774,9 @@ def fit_conc_pdf(*, data, prior_file, rmag_index, seed, output, show=False):
         print('ngal pred: %g ngal meas: %g' % (ngal_predicted, ngal_meas))
 
         if rmag > 23.5:
-            plt = fitter.plot(title=label, show=show)  # , file=hist_pdf)
+            plt = fitter.plot(title=label, legend=True, show=show)
         else:
-            plt = fitter.plot3(label=label, show=show)  # , file=hist_pdf)
+            plt = fitter.plot3(label=label, show=show)
 
         pdf.savefig(figure=plt)
 

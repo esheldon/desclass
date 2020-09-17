@@ -164,17 +164,12 @@ def plot_gmix(
 
     if data is not None:
 
+        dx_data = binsize
+
         if min is None:
             min = data.min()
         if max is None:
             max = data.max()
-
-        hd = eu.stat.histogram(
-            data, min=min, max=max, nbin=nbin, binsize=binsize, more=True,
-        )
-        dsum = hd['hist'].sum()
-        xvals = hd['center']
-        dx_data = xvals[1] - xvals[0]
 
         if npts is None:
             dx_model = dx_data/10
@@ -187,8 +182,18 @@ def plot_gmix(
         )
         dx_model = xvals[1] - xvals[0]
 
-        plt.bar(hd['center'], hd['hist'], label='data', width=dx_data,
-                alpha=0.5, color='#a6a6a6')
+        wdata, = np.where((data > min) & (data < max))
+
+        if wdata.size == 0:
+            dsum = 0.0
+        else:
+            hd = eu.stat.histogram(
+                data, min=min, max=max, nbin=nbin, binsize=binsize, more=True,
+            )
+            dsum = hd['hist'].sum()
+
+            plt.bar(hd['center'], hd['hist'], label='data', width=dx_data,
+                    alpha=0.5, color='#a6a6a6')
 
     else:
         if npts is None:
@@ -204,7 +209,10 @@ def plot_gmix(
 
     if data is not None:
         psum = predicted.sum()
-        fac = dsum/psum * dx_data/dx_model
+        if dsum > 0:
+            fac = dsum/psum * dx_data/dx_model
+        else:
+            fac = dx_data/dx_model
     else:
         fac = 1.0
 
