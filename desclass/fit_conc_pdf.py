@@ -70,7 +70,7 @@ def _gal_relweight_vs_rmag(*, rmag):
     return erf_func(GAL_WT_ERF_PARS, rmag)
 
 
-def get_gal_priors(*, rng, data, rmag, ngal, ngal_err, ngauss):
+def get_gal_priors(*, rng, data, rmag, ngal, ngal_err, ngauss, training=False):
     """
     get star priors.  The gaussian pdfs are used for generating
     guesses with bounds, only the bounds themselves are used in
@@ -79,10 +79,13 @@ def get_gal_priors(*, rng, data, rmag, ngal, ngal_err, ngauss):
     if ngauss == 1:
         frac1 = 1
     elif ngauss == 2:
-        # frac1 = 0.6
-        frac1 = _gal_relweight_vs_rmag(rmag=rmag)
+        if training:
+            frac1 = 0.6
+            num_bwidth = 0.9
+        else:
+            frac1 = _gal_relweight_vs_rmag(rmag=rmag)
+            num_bwidth = 0.1
         frac2 = 1 - frac1
-        num_bwidth = 0.1
     else:
         raise ValueError('ngauss should be 1 or 2')
 
@@ -689,7 +692,12 @@ def make_output(num):
     return np.zeros(num, dtype=dt)
 
 
-def fit_conc_pdf(*, data, prior_file, rmag_index, seed, output, show=False):
+def fit_conc_pdf(
+    *,
+    data, prior_file, rmag_index, seed, output,
+    training,
+    show=False,
+):
 
     rng = np.random.RandomState(seed)
 
@@ -793,6 +801,7 @@ def fit_conc_pdf(*, data, prior_file, rmag_index, seed, output, show=False):
             ngal=ngal_predicted,
             ngal_err=np.sqrt(ngal_predicted),
             ngauss=gal_ngauss,
+            training=training,
         )
 
         fitter = Fitter(
