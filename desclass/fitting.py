@@ -1,4 +1,6 @@
+import numpy as np
 import ngmix
+from ngmix.fitting import run_leastsq
 
 
 def fit_gauss_am(*, rng, obs):
@@ -26,3 +28,36 @@ def fit_gauss_am(*, rng, obs):
     )
     runner.go(ntry=2)
     return runner.get_fitter()
+
+
+def erf_func(pars, x, type='falling'):
+    from scipy.special import erf
+
+    minval = pars[0]
+    maxval = pars[1]
+    midval = pars[2]
+    scale = pars[3]
+
+    if type == 'falling':
+        args = (midval - x)/scale
+    else:
+        args = (x - midval)/scale
+
+    return minval + 0.5*(maxval - minval)*(1 + erf(args))
+
+
+def fit_erf(x, y, guess, type='falling'):
+
+    def func(pars):
+        return erf_func(pars, x, type)
+
+    def loss(pars):
+        model = func(pars)
+
+        return (model - y)
+
+    return run_leastsq(
+        loss,
+        np.array(guess),
+        0,
+    )

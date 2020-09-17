@@ -62,6 +62,14 @@ def _gal_mean1_vs_rmag(*, rmag):
     return -4.729e-05 * rmag**2 + 0.001028 * rmag + 0.006156
 
 
+GAL_WT_ERF_PARS = np.array([0.61744558, 0.93249301, 19.90167776, 0.81298793])
+
+
+def _gal_relweight_vs_rmag(*, rmag):
+    from .fitting import erf_func
+    return erf_func(GAL_WT_ERF_PARS, rmag)
+
+
 def get_gal_priors(*, rng, data, rmag, ngal, ngal_err, ngauss):
     """
     get star priors.  The gaussian pdfs are used for generating
@@ -71,8 +79,10 @@ def get_gal_priors(*, rng, data, rmag, ngal, ngal_err, ngauss):
     if ngauss == 1:
         frac1 = 1
     elif ngauss == 2:
-        frac1 = 0.6
+        # frac1 = 0.6
+        frac1 = _gal_relweight_vs_rmag(rmag=rmag)
         frac2 = 1 - frac1
+        num_bwidth = 0.1
     else:
         raise ValueError('ngauss should be 1 or 2')
 
@@ -84,7 +94,8 @@ def get_gal_priors(*, rng, data, rmag, ngal, ngal_err, ngauss):
     num1_prior = GaussianPrior(
         mean=num1,
         sigma=num1_err,
-        bounds=[0.1*num1, 2*num1],
+        # bounds=[0.1*num1, 2*num1],
+        bounds=[(1-num_bwidth)*num1, (1+num_bwidth)*num1],
         rng=rng,
     )
     if ngauss == 2:
@@ -93,7 +104,8 @@ def get_gal_priors(*, rng, data, rmag, ngal, ngal_err, ngauss):
         num2_prior = GaussianPrior(
             mean=num2,
             sigma=num2_err,
-            bounds=[0.1*num2, 2*num2],
+            # bounds=[0.1*num2, 2*num2],
+            bounds=[(1-num_bwidth)*num2, (1+num_bwidth)*num2],
             rng=rng,
         )
 
@@ -149,8 +161,8 @@ def get_gal_priors(*, rng, data, rmag, ngal, ngal_err, ngauss):
     sigma1 = np.interp(rmag, data['rmag_centers'], data['gal_sigmas'][:, 0])
     sigma2 = np.interp(rmag, data['rmag_centers'], data['gal_sigmas'][:, 1])
     if rmag < data['rmag_centers'][0]:
-        sigma1_bounds = [0.003, 0.005]
-        sigma2_bounds = [0.003, 0.005]
+        sigma1_bounds = [0.003, 0.007]
+        sigma2_bounds = [0.003, 0.007]
     else:
         sigma1_bounds = [0.1*sigma1, 2*sigma1]
         sigma2_bounds = [0.1*sigma1, 2*sigma1]
@@ -233,10 +245,8 @@ def get_star_priors(*, rng, data, rmag, nstar, nstar_err):
     mean1_prior = GaussianPrior(
         mean=mean1,
         sigma=abs(mean_sigma_frac*mean1),
-        # bounds=[-0.002, 0.0],
-        bounds=[mean1 - 0.5*abs(mean1), mean1 + 0.5*abs(mean1)],
-        # bounds=[mean1 - mean_sigma_frac**abs(mean1),
-        #         mean1 + mean_sigma_frac*abs(mean1)],
+        # bounds=[mean1 - 0.5*abs(mean1), mean1 + 0.5*abs(mean1)],
+        bounds=[mean1 - 0.0001, mean1 + 0.0001],
         rng=rng,
     )
 
@@ -562,7 +572,7 @@ def replace_ext(fname, old_ext, new_ext):
     return new_fname
 
 
-def plot_vs_rmag(data, type, show=False):
+def plot_vs_rmag(data, type, dofits=False, show=False):
     """
     make a plot of gaussian mixture parameters vs the central
     magnitude of the bin
@@ -582,44 +592,80 @@ def plot_vs_rmag(data, type, show=False):
         ncols=2,
     )
 
-    tab[1, 1].axis('off')
+    # tab[1, 1].axis('off')
 
-    tab[1, 1].ntext(
-        0.5, 0.5,
-        label,
-        verticalalignment='center',
-        horizontalalignment='center',
-        fontsize=16,
-    )
+    # tab[1, 1].ntext(
+    #     0.5, 0.5,
+    #     label,
+    #     verticalalignment='center',
+    #     horizontalalignment='center',
+    #     fontsize=16,
+    # )
+
+    xlim = (15, 25)
+    tab.suptitle(label, fontsize=15)
     tab[0, 0].set(
         xlabel='r mag',
         ylabel='weight',
+        xlim=xlim
     )
     tab[0, 1].set(
         xlabel='r mag',
-        ylabel='mean',
+        ylabel='relweight',
+        xlim=xlim,
     )
     tab[1, 0].set(
         xlabel='r mag',
+        ylabel='mean',
+        xlim=xlim,
+    )
+
+    tab[1, 1].set(
+        xlabel='r mag',
         ylabel=r'$\sigma$',
+        xlim=xlim,
     )
 
     centers = data['rmag']
     gmixes = data['gmix']
+
+    wsums = gmixes['weight'][:, start:end].sum(axis=1)
+
     for igauss in range(start, end):
         weights = gmixes['weight'][:, igauss]
+        relweights = weights/wsums
+
         means = gmixes['mean'][:, igauss]
         sigmas = gmixes['sigma'][:, igauss]
 
         tab[0, 0].curve(centers, weights, marker='o', markersize=2)
+        tab[0, 1].curve(centers, relweights, marker='o', markersize=2)
+
+        if dofits and type == 'gal':
+            from .fitting import fit_erf, erf_func
+
+            if igauss == 2:
+                ftype = 'falling'
+                guess = [0.6, 0.95, 20, 1]
+            else:
+                ftype = 'rising'
+                guess = [0.05, 0.4, 20, 1]
+
+            res = fit_erf(centers, relweights, guess, ftype)
+            print(igauss, 'erf pars:', res['pars'])
+
+            tab[0, 1].curve(
+                centers, erf_func(res['pars'], centers, ftype),
+                color='red',
+            )
 
         # if type == 'gal':
         #     poly = np.poly1d(np.polyfit(centers, means, 2))
         #     print(poly)
         #     tab[0, 1].curve(centers, poly(centers), color='black')
 
-        tab[0, 1].curve(centers, means, marker='o', markersize=1.5)
-        tab[1, 0].curve(centers, sigmas, marker='o', markersize=1.5)
+        tab[1, 0].curve(centers, means, marker='o', markersize=1.5)
+        tab[1, 1].curve(centers, sigmas, marker='o', markersize=1.5)
 
     if show:
         tab.show()
