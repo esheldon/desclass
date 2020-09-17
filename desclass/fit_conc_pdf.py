@@ -107,26 +107,39 @@ def get_gal_priors(*, rng, data, rmag, ngal, ngal_err, ngauss):
         mean1 = (tmean1*0.6 + tmean2*0.4)
         print('mean1:', mean1)
         mean_sigma_frac = 0.1
+        mean_bounds1 = [0.0025, 0.025]
     else:
         mean1 = _gal_mean1_vs_rmag(rmag=rmag)
-        mean_sigma_frac = 0.3
+        mean2 = _gal_mean2_vs_rmag(rmag=rmag)
+        mean_sigma_frac = 0.05
+
+        mean_bounds1 = [
+            mean1 - mean_sigma_frac*abs(mean1),
+            mean1 + mean_sigma_frac*abs(mean1),
+        ]
+        if rmag < data['rmag_centers'][0]:
+            mean_bounds2 = [
+                mean2 - mean_sigma_frac*abs(mean2),
+                mean2 + mean_sigma_frac*abs(mean2),
+            ]
+        else:
+            mean_bounds2 = [0.0025, 0.025]
 
     mean1_prior = GaussianPrior(
         mean=mean1,
         sigma=abs(mean_sigma_frac*mean1),
-        bounds=[mean1 - mean_sigma_frac*abs(mean1),
-                mean1 + mean_sigma_frac*abs(mean1)],
+        bounds=mean_bounds1,
         # bounds=[0.0025, 0.02],
         rng=rng,
     )
 
     if ngauss == 2:
-        mean2 = _gal_mean2_vs_rmag(rmag=rmag)
         mean2_prior = GaussianPrior(
             mean=mean2,
             sigma=abs(mean_sigma_frac*mean2),
             # bounds=[0.007, 0.02],
-            bounds=[0.0025, 0.02],
+            # bounds=[0.0025, 0.025],
+            bounds=mean_bounds2,
             rng=rng,
         )
 
@@ -134,21 +147,26 @@ def get_gal_priors(*, rng, data, rmag, ngal, ngal_err, ngauss):
     # and use endpoints for those outside
 
     sigma1 = np.interp(rmag, data['rmag_centers'], data['gal_sigmas'][:, 0])
+    sigma2 = np.interp(rmag, data['rmag_centers'], data['gal_sigmas'][:, 1])
+    if rmag < data['rmag_centers'][0]:
+        sigma1_bounds = [0.003, 0.005]
+        sigma2_bounds = [0.003, 0.005]
+    else:
+        sigma1_bounds = [0.1*sigma1, 2*sigma1]
+        sigma2_bounds = [0.1*sigma1, 2*sigma1]
+
     sigma1_prior = GaussianPrior(
         mean=sigma1,
         sigma=abs(sigma_sigma_frac*sigma1),
-        bounds=[0.1*sigma1, 2*sigma1],
+        bounds=sigma1_bounds,
         rng=rng,
     )
 
     if ngauss == 2:
-        sigma2 = np.interp(
-            rmag, data['rmag_centers'], data['gal_sigmas'][:, 1],
-        )
         sigma2_prior = GaussianPrior(
             mean=sigma2,
             sigma=abs(sigma_sigma_frac*sigma2),
-            bounds=[0.1*sigma2, 2*sigma2],
+            bounds=sigma2_bounds,
             rng=rng,
         )
 
@@ -544,11 +562,93 @@ def replace_ext(fname, old_ext, new_ext):
     return new_fname
 
 
+def plot_vs_rmag(data, type, show=False):
+    """
+    make a plot of gaussian mixture parameters vs the central
+    magnitude of the bin
+    """
+    import hickory
+    if type == 'star':
+        start = 0
+        end = 2
+        label = 'stars'
+    else:
+        label = 'galaxies'
+        start = 2
+        end = 4
+
+    tab = hickory.Table(
+        nrows=2,
+        ncols=2,
+    )
+
+    tab[1, 1].axis('off')
+
+    tab[1, 1].ntext(
+        0.5, 0.5,
+        label,
+        verticalalignment='center',
+        horizontalalignment='center',
+        fontsize=16,
+    )
+    tab[0, 0].set(
+        xlabel='r mag',
+        ylabel='weight',
+    )
+    tab[0, 1].set(
+        xlabel='r mag',
+        ylabel='mean',
+    )
+    tab[1, 0].set(
+        xlabel='r mag',
+        ylabel=r'$\sigma$',
+    )
+
+    centers = data['rmag']
+    gmixes = data['gmix']
+    for igauss in range(start, end):
+        weights = gmixes['weight'][:, igauss]
+        means = gmixes['mean'][:, igauss]
+        sigmas = gmixes['sigma'][:, igauss]
+
+        tab[0, 0].curve(centers, weights, marker='o', markersize=2)
+
+        # if type == 'gal':
+        #     poly = np.poly1d(np.polyfit(centers, means, 2))
+        #     print(poly)
+        #     tab[0, 1].curve(centers, poly(centers), color='black')
+
+        tab[0, 1].curve(centers, means, marker='o', markersize=1.5)
+        tab[1, 0].curve(centers, sigmas, marker='o', markersize=1.5)
+
+    if show:
+        tab.show()
+
+    return tab
+    #
+    # if output is not None:
+    #     print('writing:', output)
+    #     tab.savefig(output, dpi=100)
+    #
+
+
+def make_output(num):
+    dt = [
+        ('rmag', 'f8'),
+        ('rmagmin', 'f8'),
+        ('rmagmax', 'f8'),
+        ('gmix', cem.GAUSS_DTYPE, 4),
+    ]
+
+    return np.zeros(num, dtype=dt)
+
+
 def fit_conc_pdf(*, data, prior_file, rmag_index, seed, output, show=False):
 
     rng = np.random.RandomState(seed)
 
-    pdf_file = replace_ext(output, '.fits', '-plots.pdf')
+    print('will write to:', output)
+    pdf_file = replace_ext(output, '.npy', '-plots.pdf')
     print('writing to pdf file:', pdf_file)
     pdf = PdfPages(pdf_file)
 
@@ -575,6 +675,8 @@ def fit_conc_pdf(*, data, prior_file, rmag_index, seed, output, show=False):
         (23.5, 24.0),
         (24, 24.5),
     ]
+
+    outdata = make_output(len(edges))
 
     rmag_centers = np.array(
         [0.5*(rmagmin + rmagmax) for rmagmin, rmagmax in edges]
@@ -611,6 +713,7 @@ def fit_conc_pdf(*, data, prior_file, rmag_index, seed, output, show=False):
     for i in range(len(edges)):
         rmagmin, rmagmax = edges[i]
         rmag = 0.5*(rmagmin + rmagmax)
+
         label = r'$%.2f < r < %.2f$' % (rmagmin, rmagmax)
         print('-'*70)
         print(label)
@@ -628,12 +731,12 @@ def fit_conc_pdf(*, data, prior_file, rmag_index, seed, output, show=False):
             nstar=nstar_predicted, nstar_err=init_nstar_err[i],
         )
 
-        if rmag < 18.0:
-            gal_ngauss = 1
-        else:
-            gal_ngauss = 2
+        # if rmag < 18.0:
+        #     gal_ngauss = 1
+        # else:
+        #     gal_ngauss = 2
 
-        # gal_ngauss = 2
+        gal_ngauss = 2
 
         ngal_predicted = w.size - nstar_predicted
         if ngal_predicted < 3:
@@ -677,7 +780,17 @@ def fit_conc_pdf(*, data, prior_file, rmag_index, seed, output, show=False):
 
         pdf.savefig(figure=plt)
 
+        outdata['rmagmin'][i] = rmagmin
+        outdata['rmagmax'][i] = rmagmax
+        outdata['rmag'][i] = rmag
+        outdata['gmix'][i] = fitter.gmix
+
+    plt = plot_vs_rmag(outdata, 'star', show=show)
+    pdf.savefig(plt)
+    plt = plot_vs_rmag(outdata, 'gal', show=show)
+    pdf.savefig(plt)
+
     print('closing pdf file:', pdf_file)
     pdf.close()
-    # print('writing:', output)
-    # fitsio.write(output, gmixes, clobber=True)
+    print('writing:', output)
+    np.save(output, outdata)
