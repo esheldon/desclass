@@ -280,13 +280,13 @@ def get_star_priors(*, rng, data, rmag, nstar, nstar_err):
         rng=rng,
     )
 
-    # need to leave this fairly free to allow for seeing differences
+    # need to leave this fairly free to allow for seeing/noise differences
     sigma1 = np.interp(rmag, data['rmag_centers'], data['star_sigmas'][:, 0])
     sigma_sigma_frac = 0.3
     sigma1_prior = GaussianPrior(
         mean=sigma1,
         sigma=abs(sigma_sigma_frac*sigma1),
-        bounds=[0.7*sigma1, 1.3*sigma1],
+        bounds=[0.5*sigma1, 1.5*sigma1],
         rng=rng,
     )
 
@@ -295,7 +295,7 @@ def get_star_priors(*, rng, data, rmag, nstar, nstar_err):
     sigma2_prior = GaussianPrior(
         mean=sigma2,
         sigma=abs(sigma_sigma_frac*sigma2),
-        bounds=[0.7*sigma2, 1.3*sigma2],
+        bounds=[0.5*sigma2, 1.5*sigma2],
         rng=rng,
     )
 
