@@ -61,3 +61,36 @@ def fit_erf(x, y, guess, type='falling'):
         np.array(guess),
         0,
     )
+
+
+def exp_func(pars, x):
+    amp = pars[0]
+    off = pars[1]
+    sigma = pars[2]
+
+    xc = np.array(x).clip(min=off)
+
+    arg = (xc - off)/sigma
+    return amp * (np.exp(arg) - 1)
+    # model = np.zeros(x.size)
+    # w, = np.where(x > off)
+    # if w.size > 0:
+    #     arg = (x[w] - off)/sigma
+    #     model[w] = amp * (np.exp(arg) - 1)
+    #
+    # return model
+
+
+def fit_exp(x, y, guess):
+    def loss(pars):
+        model = exp_func(pars, x)
+        return (model - y)
+
+    return run_leastsq(
+        loss,
+        np.array(guess),
+        0,
+        maxfev=4000,
+        xtol=1.0e-5,
+        ftol=1.0e-5,
+    )

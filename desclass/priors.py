@@ -5,8 +5,8 @@ from esutil.numpy_util import between
 import hickory
 import ngmix
 # import scipy.optimize
-from ngmix.fitting import run_leastsq
-# from ngmix import print_pars
+# from ngmix.fitting import run_leastsq
+from ngmix import print_pars
 # from glob import glob
 
 
@@ -210,6 +210,21 @@ def plot_all(*, struct, type, show=False, output=None):
             poly = np.poly1d(np.polyfit(centers, means, 2))
             print(poly)
             tab[0, 1].curve(centers, poly(centers), color='black')
+        else:
+            from .fitting import fit_exp, exp_func
+
+            if igauss == 0:
+                guess = [-1.0e-6, 16, 1]
+            else:
+                guess = [+1.0e-6, 16, 1]
+            res = fit_exp(centers, means, guess)
+            assert res['flags'] == 0
+            print_pars(
+                res['pars'], front='star mean exp pars: ',
+                fmt='%.6g',
+            )
+            tab[0, 1].curve(centers, exp_func(res['pars'], centers),
+                            color='black')
 
         tab[0, 1].curve(centers, means, marker='o', markersize=1.5)
         tab[1, 0].curve(centers, sigmas, marker='o', markersize=1.5)

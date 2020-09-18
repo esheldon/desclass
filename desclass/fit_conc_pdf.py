@@ -210,6 +210,22 @@ def get_gal_priors(*, rng, data, rmag, ngal, ngal_err, ngauss, training=False):
     return priors
 
 
+def _star_mean1_vs_rmag(*, rmag):
+    from .fitting import exp_func
+    return exp_func(
+        [-1.7368e-08, 10.9409, 1.24299],
+        rmag,
+    )
+
+
+def _star_mean2_vs_rmag(*, rmag):
+    from .fitting import exp_func
+    return exp_func(
+        [5.52905e-07, 14.0743, 1.12144],
+        rmag,
+    )
+
+
 def get_star_priors(*, rng, data, rmag, nstar, nstar_err):
     """
     get star priors.  The gaussian pdfs are used for generating
@@ -217,11 +233,9 @@ def get_star_priors(*, rng, data, rmag, nstar, nstar_err):
     the EM algorithm
 
     """
-    frac1 = 0.85
+    frac1 = 0.84
     frac2 = 1 - frac1
 
-    mean_sigma_frac = 0.3
-    sigma_sigma_frac = 0.3
 
     # number in each gaussian
     num1 = frac1*nstar
@@ -244,28 +258,31 @@ def get_star_priors(*, rng, data, rmag, nstar, nstar_err):
     )
 
     # means
-    mean1 = np.interp(rmag, data['rmag_centers'], data['star_means'][:, 0])
+    # mean1 = np.interp(rmag, data['rmag_centers'], data['star_means'][:, 0])
+    mean_sigma = 0.0001
+    mean1 = _star_mean1_vs_rmag(rmag=rmag)
+    mean2 = _star_mean2_vs_rmag(rmag=rmag)
     mean1_prior = GaussianPrior(
         mean=mean1,
-        sigma=abs(mean_sigma_frac*mean1),
+        # sigma=abs(mean_sigma_frac*mean1),
+        sigma=mean_sigma,
         # bounds=[mean1 - 0.5*abs(mean1), mean1 + 0.5*abs(mean1)],
-        bounds=[mean1 - 0.0001, mean1 + 0.0001],
+        bounds=[mean1 - mean_sigma, mean1 + mean_sigma],
         rng=rng,
     )
 
-    mean2 = np.interp(rmag, data['rmag_centers'], data['star_means'][:, 1])
+    # mean2 = np.interp(rmag, data['rmag_centers'], data['star_means'][:, 1])
     mean2_prior = GaussianPrior(
         mean=mean2,
-        sigma=abs(mean_sigma_frac*mean2),
-        # bounds=[0.0, 0.0055],
-        bounds=[mean2 - 0.5*abs(mean2), mean2 + 0.1*abs(mean2)],
-        # bounds=[mean2 - mean_sigma_frac**abs(mean2),
-        #         mean2 + mean_sigma_frac*abs(mean2)],
+        sigma=mean_sigma,
+        # bounds=[mean2 - 0.5*abs(mean2), mean2 + 0.1*abs(mean2)],
+        bounds=[mean2 - mean_sigma, mean2 + mean_sigma],
         rng=rng,
     )
 
-    # covariances
+    # need to leave this fairly free to allow for seeing differences
     sigma1 = np.interp(rmag, data['rmag_centers'], data['star_sigmas'][:, 0])
+    sigma_sigma_frac = 0.3
     sigma1_prior = GaussianPrior(
         mean=sigma1,
         sigma=abs(sigma_sigma_frac*sigma1),
