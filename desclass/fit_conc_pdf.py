@@ -2,6 +2,7 @@ import numpy as np
 import esutil as eu
 from esutil.numpy_util import between
 import fitsio
+from numba import njit
 # import hickory
 # import scipy.optimize
 # from ngmix import print_pars
@@ -235,7 +236,6 @@ def get_star_priors(*, rng, data, rmag, nstar, nstar_err):
     """
     frac1 = 0.84
     frac2 = 1 - frac1
-
 
     # number in each gaussian
     num1 = frac1*nstar
@@ -592,7 +592,53 @@ def replace_ext(fname, old_ext, new_ext):
     return new_fname
 
 
-def plot_vs_rmag(data, type, dofits=False, show=False):
+def smooth_data_gauss(*, x, y, sigma):
+    ivar = 1/sigma**2
+
+    sy = y.copy()
+
+    for idata in range(1, x.size-1):
+        ssum = 0.0
+        ksum = 0.0
+
+        xcen = x[idata]
+        for ismooth in range(x.size):
+
+            k = np.exp(-0.5 * (x[ismooth] - xcen)**2 * ivar)
+
+            ssum += k*y[ismooth]
+            ksum += k
+
+        sy[idata] = ssum/ksum
+
+    return sy
+
+
+@njit
+def smooth_data_hann(y):
+    num = 3
+    window = np.array([0.5, 1., 0.5])
+    offsets = np.array([-1, 0, 1])
+
+    sy = y.copy()
+
+    for idata in range(1, y.size-1):
+        ssum = 0.0
+        ksum = 0.0
+
+        for i in range(num):
+            off = offsets[i]
+            k = window[i]
+
+            ssum += k*y[idata + off]
+            ksum += k
+
+        sy[idata] = ssum/ksum
+
+    return sy
+
+
+def plot_fits_vs_rmag(data, type, dofits=False, show=False):
     """
     make a plot of gaussian mixture parameters vs the central
     magnitude of the bin
@@ -651,15 +697,20 @@ def plot_vs_rmag(data, type, dofits=False, show=False):
 
     wsums = gmixes['weight'][:, start:end].sum(axis=1)
 
+    colors = ['#1f77b4', '#ff7f0e']
     for igauss in range(start, end):
+        color = colors[igauss - start]
+
         weights = gmixes['weight'][:, igauss]
         relweights = weights/wsums
 
         means = gmixes['mean'][:, igauss]
         sigmas = gmixes['sigma'][:, igauss]
 
-        tab[0, 0].curve(centers, weights, marker='o', markersize=2)
-        tab[0, 1].curve(centers, relweights, marker='o', markersize=2)
+        tab[0, 0].plot(centers, weights, marker='o', markersize=2,
+                       color=color)
+        tab[0, 1].plot(centers, relweights, marker='o', markersize=2,
+                       color=color)
 
         if dofits and type == 'gal':
             from .fitting import fit_erf, erf_func
@@ -684,8 +735,30 @@ def plot_vs_rmag(data, type, dofits=False, show=False):
         #     print(poly)
         #     tab[0, 1].curve(centers, poly(centers), color='black')
 
-        tab[1, 0].curve(centers, means, marker='o', markersize=1.5)
-        tab[1, 1].curve(centers, sigmas, marker='o', markersize=1.5)
+        tab[1, 0].plot(centers, means, marker='o', markersize=2, color=color)
+        tab[1, 1].plot(centers, sigmas, marker='o', markersize=2, color=color)
+
+        if not dofits:
+            tab[0, 0].curve(
+                centers,
+                # smooth_data_gauss(x=centers, y=weights, sigma=0.5),
+                smooth_data_hann(y=weights),
+                linestyle='solid', color=color,
+            )
+
+            if type == 'gal':
+                tab[1, 0].curve(
+                    centers,
+                    # smooth_data_gauss(x=centers, y=means, sigma=0.25),
+                    smooth_data_hann(means),
+                    linestyle='solid', color=color,
+                )
+            tab[1, 1].curve(
+                centers,
+                # smooth_data_gauss(x=centers, y=sigmas, sigma=0.5),
+                smooth_data_hann(sigmas),
+                linestyle='solid', color=color,
+            )
 
     if show:
         tab.show()
@@ -857,9 +930,9 @@ def fit_conc_pdf(
         outdata['rmag'][i] = rmag
         outdata['gmix'][i] = fitter.gmix
 
-    plt = plot_vs_rmag(outdata, 'star', show=show)
+    plt = plot_fits_vs_rmag(outdata, 'star', show=show)
     pdf.savefig(plt)
-    plt = plot_vs_rmag(outdata, 'gal', show=show)
+    plt = plot_fits_vs_rmag(outdata, 'gal', show=show)
     pdf.savefig(plt)
 
     print('closing pdf file:', pdf_file)
