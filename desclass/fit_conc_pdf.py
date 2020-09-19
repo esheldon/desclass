@@ -3,6 +3,7 @@ import esutil as eu
 from esutil.numpy_util import between
 import fitsio
 from numba import njit
+# import scipy.interpolate
 # import hickory
 # import scipy.optimize
 # from ngmix import print_pars
@@ -615,9 +616,9 @@ def smooth_data_gauss(*, x, y, sigma):
 
 
 @njit
-def smooth_data_hann(y):
-    num = 3
+def smooth_data_hann3(y):
     window = np.array([0.5, 1., 0.5])
+    num = window.size
     offsets = np.array([-1, 0, 1])
 
     sy = y.copy()
@@ -730,11 +731,6 @@ def plot_fits_vs_rmag(data, type, dofits=False, show=False):
                 color='red',
             )
 
-        # if type == 'gal':
-        #     poly = np.poly1d(np.polyfit(centers, means, 2))
-        #     print(poly)
-        #     tab[0, 1].curve(centers, poly(centers), color='black')
-
         tab[1, 0].plot(centers, means, marker='o', markersize=2, color=color)
         tab[1, 1].plot(centers, sigmas, marker='o', markersize=2, color=color)
 
@@ -742,21 +738,19 @@ def plot_fits_vs_rmag(data, type, dofits=False, show=False):
             tab[0, 0].curve(
                 centers,
                 # smooth_data_gauss(x=centers, y=weights, sigma=0.5),
-                smooth_data_hann(y=weights),
+                smooth_data_hann3(y=weights),
                 linestyle='solid', color=color,
             )
 
             if type == 'gal':
                 tab[1, 0].curve(
                     centers,
-                    # smooth_data_gauss(x=centers, y=means, sigma=0.25),
-                    smooth_data_hann(means),
+                    smooth_data_hann3(means),
                     linestyle='solid', color=color,
                 )
             tab[1, 1].curve(
                 centers,
-                # smooth_data_gauss(x=centers, y=sigmas, sigma=0.5),
-                smooth_data_hann(sigmas),
+                smooth_data_hann3(sigmas),
                 linestyle='solid', color=color,
             )
 
