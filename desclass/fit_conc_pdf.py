@@ -639,6 +639,76 @@ def smooth_data_hann3(y):
     return sy
 
 
+def interp_gp_old(xin, yin, xinterp):
+    from sklearn import gaussian_process
+    from sklearn.gaussian_process.kernels import (
+        Matern, WhiteKernel,
+        # ConstantKernel,
+    )
+
+    xmean = xin.mean()
+    ymean = yin.mean()
+    # ystd = yin.std()
+    ystd = (smooth_data_hann3(yin) - yin).std()/10
+    # ystd = 1
+
+    x = xin - xmean
+    # y = (yin - ymean)/ystd
+    y = yin - ymean
+
+    spacing = x[1] - x[0]
+    kernel = (
+        # ConstantKernel() +
+        Matern(length_scale=spacing, nu=5/2) +
+        WhiteKernel(noise_level=ystd**2)
+    )
+
+    gp = gaussian_process.GaussianProcessRegressor(kernel=kernel)
+
+    X = x.reshape(-1, 1)
+    gp.fit(X, y)
+
+    y_pred, sigma = gp.predict(
+        (xinterp - xmean).reshape(-1, 1),
+        return_std=True,
+    )
+
+    y_pred = y_pred*ystd + ymean
+    return y_pred, sigma
+
+
+def interp_gp(x, y, yerr, xinterp):
+    from sklearn import gaussian_process
+    from sklearn.gaussian_process.kernels import (
+        Matern, WhiteKernel,
+        # ConstantKernel,
+    )
+
+    # _, ystd = eu.stat.sigma_clip(smooth_data_hann3(y) - y)
+    # ystd = (smooth_data_hann3(y) - y).std()
+
+    spacing = x[1] - x[0]
+    kernel = (
+        # ConstantKernel() +
+        Matern(length_scale=spacing, nu=5/2) +
+        WhiteKernel(noise_level=yerr**2)
+    )
+
+    gp = gaussian_process.GaussianProcessRegressor(
+        kernel=kernel, normalize_y=True,
+    )
+
+    X = x.reshape(-1, 1)
+    gp.fit(X, y)
+
+    y_pred, sigma = gp.predict(
+        xinterp.reshape(-1, 1),
+        return_std=True,
+    )
+
+    return y_pred, sigma
+
+
 def plot_fits_vs_rmag(data, type, dofits=False, show=False):
     """
     make a plot of gaussian mixture parameters vs the central
@@ -735,23 +805,63 @@ def plot_fits_vs_rmag(data, type, dofits=False, show=False):
         tab[1, 1].plot(centers, sigmas, marker='o', markersize=2, color=color)
 
         if not dofits:
-            tab[0, 0].curve(
-                centers,
-                # smooth_data_gauss(x=centers, y=weights, sigma=0.5),
-                smooth_data_hann3(y=weights),
-                linestyle='solid', color=color,
+            # tab[0, 0].curve(
+            #     centers,
+            #     smooth_data_hann3(y=weights),
+            #     linestyle='solid', color=color,
+            # )
+            #
+            # if type == 'gal':
+            #     tab[1, 0].curve(
+            #         centers,
+            #         smooth_data_hann3(means),
+            #         linestyle='solid', color=color,
+            #     )
+            # tab[1, 1].curve(
+            #     centers,
+            #     smooth_data_hann3(sigmas),
+            #     linestyle='solid', color=color,
+            # )
+
+            xinterp = np.linspace(centers[0], centers[-1], 1000)
+
+            ystd = (smooth_data_hann3(weights) - weights).std()
+            yinterp, ysigma = interp_gp(centers, weights, ystd, xinterp)
+            tab[0, 0].curve(xinterp, yinterp, linestyle='solid', color=color)
+            tab[0, 0].fill(
+                np.concatenate([xinterp, xinterp[::-1]]),
+                np.concatenate([yinterp - 2*ysigma,
+                                (yinterp + 2*ysigma)[::-1]]),
+                alpha=.2, fc='grey', ec='None',  # label='95% CI',
             )
 
-            if type == 'gal':
-                tab[1, 0].curve(
-                    centers,
-                    smooth_data_hann3(means),
-                    linestyle='solid', color=color,
+            # if type == 'gal':
+            if True:
+                ystd = (smooth_data_hann3(means) - means).std()
+                yinterp, ysigma = interp_gp(centers, means, ystd, xinterp)
+                tab[1, 0].curve(xinterp, yinterp, linestyle='solid',
+                                color=color)
+                tab[1, 0].fill(
+                    np.concatenate([xinterp, xinterp[::-1]]),
+                    np.concatenate([yinterp - 2*ysigma,
+                                    (yinterp + 2*ysigma)[::-1]]),
+                    alpha=.2, fc='grey', ec='None',  # label='95% CI',
                 )
-            tab[1, 1].curve(
-                centers,
-                smooth_data_hann3(sigmas),
-                linestyle='solid', color=color,
+
+            ystd = (smooth_data_hann3(sigmas) - sigmas).std()
+            if type == 'gal':  #  and igauss == end-1:
+                ysend = smooth_data_hann3(sigmas)
+                # ystd = ystd*2
+            else:
+                ysend = sigmas
+
+            yinterp, ysigma = interp_gp(centers, ysend, ystd, xinterp)
+            tab[1, 1].curve(xinterp, yinterp, linestyle='solid', color=color)
+            tab[1, 1].fill(
+                np.concatenate([xinterp, xinterp[::-1]]),
+                np.concatenate([yinterp - 2*ysigma,
+                                (yinterp + 2*ysigma)[::-1]]),
+                alpha=.2, fc='grey', ec='None',  # label='95% CI',
             )
 
     if show:
