@@ -709,6 +709,92 @@ def interp_gp(x, y, yerr, xinterp):
     return y_pred, sigma
 
 
+def plot_purity(data, type, rng):
+    """
+    plot the cumulative contamination, e.g.
+
+    intergral(nstar)/(integral(nstar) + integral(ngal))
+    intergral(ngal)/(integral(nstar) + integral(ngal))
+    """
+    import scipy.stats
+    import hickory
+
+    tab = hickory.Table(
+        figsize=(10, 7.5),
+        nrows=4, ncols=4,
+    )
+
+    gmixes = data['gmix']
+    ngauss = gmixes['mean'].shape[1]
+    npts = 1000
+
+    for rmagbin in range(data.size):
+
+        label = r'$%.2f < r < %.2f$' % (
+            data['rmagmin'][rmagbin],
+            data['rmagmax'][rmagbin],
+        )
+
+        all_cdf = np.zeros(npts)
+        this_cdf = np.zeros(npts)
+        purity = np.zeros(npts)
+
+        # if type == 'star':
+        #     sub_gmix = gmixes[0, 0:2]
+        # else:
+        #     sub_gmix = gmixes[0, 2:]
+        #
+        # rvals = cem.gmix_sample(sub_gmix, rng, size=10000)
+        #
+        # minconc, maxconc = -0.01, 0.025
+        # minconc, maxconc = rvals.min(), rvals.max()
+        if type == 'star':
+            minconc, maxconc = 0, 0.005
+        else:
+            minconc, maxconc = -0.001, 0.005
+
+        num = 1000
+        conc = np.linspace(minconc, maxconc, num)
+
+        for igauss in range(ngauss):
+            mean = gmixes['mean'][rmagbin, igauss]
+            sigma = gmixes['sigma'][rmagbin, igauss]
+            norm = gmixes['num'][rmagbin, igauss]
+
+            n = scipy.stats.norm(loc=mean, scale=sigma)
+
+            if type == 'star':
+                vals = norm * n.cdf(conc)
+            else:
+                vals = norm * n.sf(conc)
+
+            all_cdf += vals
+
+            if type == 'star' and igauss < 2:
+                this_cdf += vals
+            elif type == 'gal' and igauss >= 2:
+                this_cdf += vals
+
+        w, = np.where(all_cdf > 0)
+        purity[w] = this_cdf[w]/all_cdf[w]
+
+        ylim = (
+            0.9*purity[w].min(),
+            1.1,
+        )
+        ax = tab.axes[rmagbin]
+        ax.set(
+            title=label,
+            xlabel='concentration',
+            ylabel='%s purity' % type,
+            ylim=ylim,
+        )
+        ax.axhline(1, color='black')
+        ax.curve(conc[w], purity[w])
+
+    tab.show()
+
+
 def plot_fits_vs_rmag(data, type, dofits=False, show=False, smooth_type='gp'):
     """
     make a plot of gaussian mixture parameters vs the central
