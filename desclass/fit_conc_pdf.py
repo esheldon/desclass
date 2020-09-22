@@ -2,16 +2,9 @@ import numpy as np
 import esutil as eu
 from esutil.numpy_util import between
 import fitsio
-from numba import njit
-# import scipy.interpolate
-# import hickory
-# import scipy.optimize
-# from ngmix import print_pars
 from . import staramp
-# from . import galamp
 from . import cem
-from .cem import gauss_set, gauss_eval_scalar
-
+from .interp import smooth_data_hann3, interp_gp
 from matplotlib.backends.backend_pdf import PdfPages
 
 
@@ -288,7 +281,7 @@ def get_star_priors(*, rng, data, rmag, nstar, nstar_err):
     sigma1_prior = GaussianPrior(
         mean=sigma1,
         sigma=abs(sigma_sigma_frac*sigma1),
-        bounds=[0.5*sigma1, 1.5*sigma1],
+        bounds=[0.1*sigma1, 1.5*sigma1],
         rng=rng,
     )
 
@@ -297,7 +290,7 @@ def get_star_priors(*, rng, data, rmag, nstar, nstar_err):
     sigma2_prior = GaussianPrior(
         mean=sigma2,
         sigma=abs(sigma_sigma_frac*sigma2),
-        bounds=[0.5*sigma2, 1.5*sigma2],
+        bounds=[0.1*sigma2, 1.5*sigma2],
         rng=rng,
     )
 
@@ -393,9 +386,6 @@ class Fitter(object):
             if self.result['converged']:
                 break
 
-        # cem.gmix_print(self.gmix)
-        # self.gmix['num'] *= self.data.size
-        # cem.gmix_print(self.gmix)
         if self.result['converged']:
             self.result['flags'] = 0
         else:
@@ -415,16 +405,6 @@ class Fitter(object):
                 mean,
                 sigma,
             )
-        # nsum = gmix['num'].sum()
-        # for i in range(self.ngauss):
-        #     gauss = gmix[i]
-        #     cem.gauss_set(
-        #         gauss,
-        #         gauss['num']/nsum,
-        #         gauss['mean'],
-        #         gauss['sigma'],
-        #     )
-        #
         return gmix
 
     def plot(
@@ -594,199 +574,6 @@ def replace_ext(fname, old_ext, new_ext):
     return new_fname
 
 
-def smooth_data_gauss(*, x, y, sigma):
-    ivar = 1/sigma**2
-
-    sy = y.copy()
-
-    for idata in range(1, x.size-1):
-        ssum = 0.0
-        ksum = 0.0
-
-        xcen = x[idata]
-        for ismooth in range(x.size):
-
-            k = np.exp(-0.5 * (x[ismooth] - xcen)**2 * ivar)
-
-            ssum += k*y[ismooth]
-            ksum += k
-
-        sy[idata] = ssum/ksum
-
-    return sy
-
-
-@njit
-def smooth_data_hann3(y):
-    window = np.array([0.5, 1., 0.5])
-    num = window.size
-    offsets = np.array([-1, 0, 1])
-
-    sy = y.copy()
-
-    for idata in range(1, y.size-1):
-        ssum = 0.0
-        ksum = 0.0
-
-        for i in range(num):
-            off = offsets[i]
-            k = window[i]
-
-            ssum += k*y[idata + off]
-            ksum += k
-
-        sy[idata] = ssum/ksum
-
-    return sy
-
-
-def interp_gp_old(xin, yin, xinterp):
-    from sklearn import gaussian_process
-    from sklearn.gaussian_process.kernels import (
-        Matern, WhiteKernel,
-        # ConstantKernel,
-    )
-
-    xmean = xin.mean()
-    ymean = yin.mean()
-    # ystd = yin.std()
-    ystd = (smooth_data_hann3(yin) - yin).std()/10
-    # ystd = 1
-
-    x = xin - xmean
-    # y = (yin - ymean)/ystd
-    y = yin - ymean
-
-    spacing = x[1] - x[0]
-    kernel = (
-        # ConstantKernel() +
-        Matern(length_scale=spacing, nu=5/2) +
-        WhiteKernel(noise_level=ystd**2)
-    )
-
-    gp = gaussian_process.GaussianProcessRegressor(kernel=kernel)
-
-    X = x.reshape(-1, 1)
-    gp.fit(X, y)
-
-    y_pred, sigma = gp.predict(
-        (xinterp - xmean).reshape(-1, 1),
-        return_std=True,
-    )
-
-    y_pred = y_pred*ystd + ymean
-    return y_pred, sigma
-
-
-def get_gp(x, y, yerr):
-    from sklearn import gaussian_process
-    from sklearn.gaussian_process.kernels import (
-        Matern, WhiteKernel,
-        # ConstantKernel,
-    )
-
-    # _, ystd = eu.stat.sigma_clip(smooth_data_hann3(y) - y)
-    # ystd = (smooth_data_hann3(y) - y).std()
-
-    spacing = x[1] - x[0]
-    kernel = (
-        # ConstantKernel() +
-        Matern(length_scale=spacing, nu=5/2) +
-        WhiteKernel(noise_level=yerr**2)
-    )
-
-    gp = gaussian_process.GaussianProcessRegressor(
-        kernel=kernel, normalize_y=True,
-    )
-
-    X = x.reshape(-1, 1)
-    gp.fit(X, y)
-
-    return gp
-
-
-def interp_gp(x, y, yerr, xinterp):
-
-    gp = get_gp(x, y, yerr)
-
-    y_pred, sigma = gp.predict(
-        xinterp.reshape(-1, 1),
-        return_std=True,
-    )
-
-    return y_pred, sigma
-
-
-@njit
-def sum_interpolated_gauss(nums, means, sigmas, conc, vals, gauss):
-
-    for i in range(nums.size):
-        gauss_set(
-            gauss,
-            nums[i],
-            means[i],
-            sigmas[i],
-        )
-        vals[i] += gauss_eval_scalar(gauss, conc[i])
-
-
-def calculate_prob(data, rmag, conc):
-
-    rmag = np.array(rmag, dtype='f8', copy=False)
-    conc = np.array(conc, dtype='f8', copy=False)
-
-    gmixes = data['gmix']
-    ngauss = gmixes['mean'].shape[1]
-
-    centers = data['rmag']
-
-    gal_sums = np.zeros(rmag.size)
-    star_sums = np.zeros(rmag.size)
-
-    gauss = np.zeros(1, dtype=cem.GAUSS_DTYPE)[0]
-
-    for igauss in range(ngauss):
-        nums = gmixes['num'][:, igauss]
-        means = gmixes['mean'][:, igauss]
-        sigmas = gmixes['sigma'][:, igauss]
-
-        ystd = (smooth_data_hann3(nums) - nums).std()
-        nums_interp, _ = interp_gp(centers, nums, ystd, rmag)
-
-        ystd = (smooth_data_hann3(means) - means).std()
-        means_interp, _ = interp_gp(centers, means, ystd, rmag)
-
-        if igauss < 2:
-            ysend = sigmas
-        else:
-            ysend = smooth_data_hann3(sigmas)
-
-        ystd = (smooth_data_hann3(sigmas) - sigmas).std()
-        sigmas_interp, _ = interp_gp(centers, ysend, ystd, rmag)
-
-        if igauss < 2:
-            sum_interpolated_gauss(
-                nums_interp, means_interp, sigmas_interp, conc, star_sums,
-                gauss,
-            )
-        else:
-            sum_interpolated_gauss(
-                nums_interp, means_interp, sigmas_interp, conc, gal_sums,
-                gauss,
-            )
-
-    tot_sums = gal_sums + star_sums
-
-    w, = np.where(tot_sums > 0)
-    prob_gal = np.zeros(rmag.size)
-    prob_star = np.zeros(rmag.size)
-
-    prob_gal[w] = gal_sums[w]/tot_sums[w]
-    prob_star[w] = star_sums[w]/tot_sums[w]
-
-    return prob_gal, prob_star
-
-
 def plot_purity(data, type, rng):
     """
     plot the cumulative contamination, e.g.
@@ -817,15 +604,6 @@ def plot_purity(data, type, rng):
         this_cdf = np.zeros(npts)
         purity = np.zeros(npts)
 
-        # if type == 'star':
-        #     sub_gmix = gmixes[0, 0:2]
-        # else:
-        #     sub_gmix = gmixes[0, 2:]
-        #
-        # rvals = cem.gmix_sample(sub_gmix, rng, size=10000)
-        #
-        # minconc, maxconc = -0.01, 0.025
-        # minconc, maxconc = rvals.min(), rvals.max()
         if type == 'star':
             minconc, maxconc = 0, 0.005
         else:
@@ -873,7 +651,7 @@ def plot_purity(data, type, rng):
     tab.show()
 
 
-def plot_fits_vs_rmag(data, type, dofits=False, show=False, smooth_type='gp'):
+def plot_fits_vs_rmag(data, type, dofits=False, show=False):
     """
     make a plot of gaussian mixture parameters vs the central
     magnitude of the bin
@@ -892,16 +670,6 @@ def plot_fits_vs_rmag(data, type, dofits=False, show=False, smooth_type='gp'):
         nrows=2,
         ncols=2,
     )
-
-    # tab[1, 1].axis('off')
-
-    # tab[1, 1].ntext(
-    #     0.5, 0.5,
-    #     label,
-    #     verticalalignment='center',
-    #     horizontalalignment='center',
-    #     fontsize=16,
-    # )
 
     xlim = (15, 25)
     tab.suptitle(label, fontsize=15)
@@ -972,76 +740,29 @@ def plot_fits_vs_rmag(data, type, dofits=False, show=False, smooth_type='gp'):
 
             xinterp = np.linspace(centers[0], centers[-1], 1000)
 
-            if smooth_type == 'hann':
-                tab[0, 0].curve(
-                    xinterp,
-                    np.interp(xinterp, centers, smooth_data_hann3(weights)),
-                    linestyle='solid', color=color,
-                )
-
-                if type == 'gal':
-                    tab[1, 0].curve(
-                        xinterp,
-                        np.interp(xinterp, centers, smooth_data_hann3(means)),
-                        linestyle='solid', color=color,
-                    )
-                tab[1, 1].curve(
-                    xinterp,
-                    np.interp(xinterp, centers, smooth_data_hann3(sigmas)),
-                    linestyle='solid', color=color,
-                )
-            elif smooth_type == 'gp':
-
-                ystd = (smooth_data_hann3(weights) - weights).std()
-                yinterp, ysigma = interp_gp(centers, weights, ystd, xinterp)
-                tab[0, 0].curve(xinterp, yinterp, linestyle='solid',
+            ystd = (smooth_data_hann3(weights) - weights).std()
+            yinterp, ysigma = interp_gp(centers, weights, ystd, xinterp)
+            tab[0, 0].curve(xinterp, yinterp, linestyle='solid',
+                            color=color)
+            if True:
+                ystd = (smooth_data_hann3(means) - means).std()
+                yinterp, ysigma = interp_gp(centers, means, ystd, xinterp)
+                tab[1, 0].curve(xinterp, yinterp, linestyle='solid',
                                 color=color)
-                # tab[0, 0].fill(
-                #     np.concatenate([xinterp, xinterp[::-1]]),
-                #     np.concatenate([yinterp - 2*ysigma,
-                #                     (yinterp + 2*ysigma)[::-1]]),
-                #     alpha=.2, fc='grey', ec='None',  # label='95% CI',
-                # )
-                #
-                # if type == 'gal':
-                if True:
-                    ystd = (smooth_data_hann3(means) - means).std()
-                    yinterp, ysigma = interp_gp(centers, means, ystd, xinterp)
-                    tab[1, 0].curve(xinterp, yinterp, linestyle='solid',
-                                    color=color)
-                    # tab[1, 0].fill(
-                    #     np.concatenate([xinterp, xinterp[::-1]]),
-                    #     np.concatenate([yinterp - 2*ysigma,
-                    #                     (yinterp + 2*ysigma)[::-1]]),
-                    #     alpha=.2, fc='grey', ec='None',  # label='95% CI',
-                    # )
-                    #
-                ystd = (smooth_data_hann3(sigmas) - sigmas).std()
-                if type == 'gal':
-                    ysend = smooth_data_hann3(sigmas)
-                    # ystd = ystd*2
-                else:
-                    ysend = sigmas
+            ystd = (smooth_data_hann3(sigmas) - sigmas).std()
+            if type == 'gal':
+                ysend = smooth_data_hann3(sigmas)
+            else:
+                ysend = sigmas
 
-                yinterp, ysigma = interp_gp(centers, ysend, ystd, xinterp)
-                tab[1, 1].curve(xinterp, yinterp, linestyle='solid',
-                                color=color)
-                # tab[1, 1].fill(
-                #     np.concatenate([xinterp, xinterp[::-1]]),
-                #     np.concatenate([yinterp - 2*ysigma,
-                #                     (yinterp + 2*ysigma)[::-1]]),
-                #     alpha=.2, fc='grey', ec='None',  # label='95% CI',
-                # )
+            yinterp, ysigma = interp_gp(centers, ysend, ystd, xinterp)
+            tab[1, 1].curve(xinterp, yinterp, linestyle='solid',
+                            color=color)
 
     if show:
         tab.show()
 
     return tab
-    #
-    # if output is not None:
-    #     print('writing:', output)
-    #     tab.savefig(output, dpi=100)
-    #
 
 
 def make_output(num):
