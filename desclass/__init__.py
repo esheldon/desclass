@@ -19,3 +19,5 @@ from . import util
 
 from . import cem
 from . import fit_conc_pdf
+from . import interp
+from . import prob
