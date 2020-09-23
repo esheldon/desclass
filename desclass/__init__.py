@@ -15,6 +15,7 @@ from . import psf_flux
 from . import staramp
 from . import galamp
 from . import fithist
+from . import fithist_priors
 from . import util
 
 from . import cem

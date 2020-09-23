@@ -4,18 +4,274 @@ from esutil.numpy_util import between
 import fitsio
 import hickory
 # import scipy.optimize
-from ngmix.fitting import run_leastsq
 from ngmix import print_pars
 from . import staramp
 from . import galamp
+import scipy.stats
+
+
+class StarGalaxyModel(object):
+    def __init__(self, pars):
+        self.pars = pars
+
+        self.amp = pars[0]
+        a = pars[1]
+        loc = pars[2]
+        scale = pars[3]
+
+        self.gal1_amp = pars[4]
+        gal1_mean = pars[5]
+        gal1_sigma = pars[6]
+
+        self.gal2_amp = pars[7]
+        gal2_mean = pars[8]
+        gal2_sigma = pars[9]
+
+        self.sk = scipy.stats.skewnorm(a=a, loc=loc, scale=scale)
+        self.g1 = scipy.stats.norm(loc=gal1_mean, scale=gal1_sigma)
+        self.g2 = scipy.stats.norm(loc=gal2_mean, scale=gal2_sigma)
+
+        self.amps = np.array([self.amp, self.gal1_amp, self.gal2_amp])
+        self.weights = self.amps/self.amps.sum()
+        self.pdfs = [self.sk, self.g1, self.g2]
+
+    def pdf(self, x):
+
+        vals = np.zeros(len(x))
+
+        for pdf, amp in zip(self.pdfs, self.amps):
+            these_vals = pdf.pdf(x)
+            these_vals *= amp
+
+            vals += these_vals
+
+        return vals
+
+    def sample(self, n=None, rng=None):
+
+        if n is None:
+            scalar = True
+            n = 1
+        else:
+            scalar = False
+
+        if rng is None:
+            rng = np.random.RandomState()
+
+        component_sizes = rng.multinomial(n, self.weights)
+
+        samples = np.zeros(n)
+
+        start = 0
+        for i, size in enumerate(component_sizes):
+            these_samples = self.pdfs[i].rvs(size, random_state=rng)
+            samples[start:start+size] = these_samples
+            start += size
+
+        if scalar:
+            samples = samples[0]
+
+        return samples
+
+
+class StarModel(object):
+    def __init__(self, pars):
+        self.pars = pars
+
+        self.amp = pars[0]
+        a = pars[1]
+        loc = pars[2]
+        scale = pars[3]
+
+        self.dist = scipy.stats.skewnorm(a=a, loc=loc, scale=scale)
+
+    def pdf(self, x):
+        return self.amp * self.dist.pdf(x)
+
+    def sample(self, n=None, rng=None):
+        return self.pdf.rvs(n, random_state=rng)
+
+    def plot(
+        self, *,
+        x,
+        fac=1,
+        file=None,
+        dpi=100,
+        show=False,
+        plt=None,
+        **plot_kws
+    ):
+        """
+        plot the model
+
+        Parameters
+        ----------
+        min: float
+            Min value to plot, if data is sent then this can be left
+            out and the min value will be gotten from that data.
+        max: float
+            Max value to plot, if data is sent then this can be left
+            out and the max value will be gotten from that data.
+        npts: int, optional
+            Number of points to use for the plot.  If data are sent you
+            can leave this off and a suitable value will be chosen based
+            on the data binsize
+        data: array, optional
+            Optional data to plot as a histogram
+        nbin: int, optional
+            Optional number of bins for histogramming data
+        binsize: float, optional
+            Optional binsize for histogramming data
+        file: str, optional
+            Optionally write out a plot file
+        dpi: int, optional
+            Optional dpi for graphics like png, default 100
+        show: bool, optional
+            If True, show the plot on the screen
+
+        Returns
+        -------
+        plot object
+        """
+        import hickory
+
+        if plt is None:
+            plt = hickory.Plot(**plot_kws)
+
+        model = fac*self.pdf(x)
+
+        plt.curve(x, model, label='model')
+
+        if show:
+            plt.show()
+
+        if file is not None:
+            plt.savefig(file, dpi=dpi)
+
+        return plt
+
+
+class PriorBase(object):
+    def sample(self):
+        r = []
+        for prior in self.priors:
+            val = prior.sample()
+            r.append(val)
+        return np.array(r)
+
+
+class StarPrior(PriorBase):
+    def __init__(
+        self,
+        *,
+        rng,
+        amp,
+        amp_sigma,
+        a,
+        a_sigma,
+        loc,
+        loc_sigma,
+        scale,
+        scale_sigma,
+    ):
+
+        amp_prior = GaussianPrior(
+            mean=amp, sigma=amp_sigma, rng=rng,
+            bounds=(0.001, np.inf),
+        )
+        a_prior = GaussianPrior(
+            mean=a, sigma=a_sigma, rng=rng,
+            bounds=(-1, 4),
+        )
+        loc_prior = GaussianPrior(
+            mean=loc, sigma=loc_sigma, rng=rng,
+            bounds=(-0.007, 0.007),
+        )
+        scale_prior = GaussianPrior(
+            mean=scale, sigma=scale_sigma, rng=rng,
+            bounds=(1.0e-4, 0.01),
+        )
+
+        self.priors = [
+            amp_prior,
+            a_prior,
+            loc_prior,
+            scale_prior,
+        ]
+
+
+class GalaxyPrior(PriorBase):
+    def __init__(
+        self,
+        *,
+        rng,
+        gal1_amp,
+        gal1_mean,
+        gal1_sigma,
+        gal2_amp,
+        gal2_mean,
+        gal2_sigma,
+        width=0.3,
+    ):
+
+        gal1_amp_prior = GaussianPrior(
+            mean=gal1_amp, sigma=gal1_amp*width, rng=rng,
+            bounds=(0, np.inf),
+        )
+        gal1_mean_prior = GaussianPrior(
+            mean=gal1_mean, sigma=gal1_mean*width, rng=rng,
+            bounds=(0.003, 0.025),
+        )
+        gal1_sigma_prior = GaussianPrior(
+            mean=gal1_sigma, sigma=gal1_sigma*width, rng=rng,
+            bounds=(0.001, 0.01),
+        )
+
+        gal2_amp_prior = GaussianPrior(
+            mean=gal2_amp, sigma=gal2_amp*width, rng=rng,
+            bounds=(0, np.inf),
+        )
+        gal2_mean_prior = GaussianPrior(
+            mean=gal2_mean, sigma=gal2_mean*width, rng=rng,
+            bounds=(0.003, 0.025),
+        )
+        gal2_sigma_prior = GaussianPrior(
+            mean=gal2_sigma, sigma=gal2_sigma*width, rng=rng,
+            bounds=(0.001, 0.01),
+        )
+
+        self.priors = [
+            gal1_amp_prior,
+            gal1_mean_prior,
+            gal1_sigma_prior,
+
+            gal2_amp_prior,
+            gal2_mean_prior,
+            gal2_sigma_prior,
+        ]
+
+
+class StarGalaxyPrior(PriorBase):
+    def __init__(self, *, rng, star_prior, gal_prior):
+        self.priors = star_prior.priors + gal_prior.priors
 
 
 class GaussianPrior(object):
-    def __init__(self, *, mean, sigma, bounds, rng):
+    def __init__(self, *, mean, sigma, bounds=None, rng=None):
         self.mean = mean
-        self.sigma = sigma
+        self.sigma = abs(sigma)
+        self.ivar = 1/sigma**2
+
+        if bounds is None:
+            bounds = [-np.inf, np.inf]
+        if rng is None:
+            rng = np.random.RandomState()
+
         self.rng = rng
         self.bounds = bounds
+
+    def get_logprob(self, value):
+        return -0.5*(value - self.mean)**2 * self.ivar
 
     def get_fdiff(self, value):
         return (value - self.mean)/self.sigma
@@ -50,6 +306,174 @@ class GaussianPrior(object):
 
     def __repr__(self):
         return 'mean: %g sigma: %g' % (self.mean, self.sigma)
+
+
+class Fitter(object):
+    def __init__(self, *, x, y, yerr, prior, model_class):
+
+        self.x = x
+        self.y = y
+        self.yerr = yerr.clip(min=1)
+        self.ivar = 1.0/self.yerr**2
+
+        self.prior = prior
+        self.bounds = [p.bounds for p in self.prior.priors]
+
+        self.model_class = model_class
+
+    def go(self, guess):
+        from scipy.optimize import fmin_l_bfgs_b
+
+        x, f, d = fmin_l_bfgs_b(
+            self.get_nlogprob,
+            guess,
+            bounds=self.bounds,
+            approx_grad=True,
+        )
+
+        self.result = {
+            'pars': x,
+            'flags': d['warnflag'],
+            'nfev': d['funcalls'],
+        }
+
+    def get_nlogprob(self, pars):
+        return -self.get_logprob(pars)
+
+    def get_logprob(self, pars):
+        return self.get_loglike(pars) + self.get_log_prior(pars)
+
+    def get_loglike(self, pars):
+        mod = self.get_model(pars)
+
+        chi2 = (mod - self.y)**2 * self.ivar
+        chi2 = chi2.sum()
+        return -0.5 * chi2
+
+    def get_log_prior(self, pars):
+
+        logprob = 0.0
+
+        for i in range(pars.size):
+            prior = self.prior.priors[i]
+
+            logprob += prior.get_logprob(pars[i])
+
+        return logprob
+
+    def get_model(self, pars, x=None):
+        if x is None:
+            x = self.x
+
+        # e.g. StarGalaxyModel, StarModel, GalaxyModel
+        mod = self.model_class(pars)
+        return mod.pdf(x)
+
+    def plot(
+        self, *,
+        x=None,
+        y=None,
+        components=None,
+        min=None,
+        max=None,
+        npts=None,
+        data=None,
+        nbin=None,
+        binsize=None,
+        file=None,
+        dpi=100,
+        show=False,
+        **plot_kws
+    ):
+        """
+        plot the model and each component.  Optionally plot a set of
+        data as well.  Currently only works for 1d
+
+        Parameters
+        ----------
+        min: float
+            Min value to plot, if data is sent then this can be left
+            out and the min value will be gotten from that data.
+        max: float
+            Max value to plot, if data is sent then this can be left
+            out and the max value will be gotten from that data.
+        npts: int, optional
+            Number of points to use for the plot.  If data are sent you
+            can leave this off and a suitable value will be chosen based
+            on the data binsize
+        data: array, optional
+            Optional data to plot as a histogram
+        nbin: int, optional
+            Optional number of bins for histogramming data
+        binsize: float, optional
+            Optional binsize for histogramming data
+        file: str, optional
+            Optionally write out a plot file
+        dpi: int, optional
+            Optional dpi for graphics like png, default 100
+        show: bool, optional
+            If True, show the plot on the screen
+
+        Returns
+        -------
+        plot object
+        """
+        import hickory
+
+        pars = self.result['pars']
+
+        plt = hickory.Plot(**plot_kws)
+
+        dx_orig = self.x[1] - self.x[0]
+
+        if x is not None and y is not None:
+            dx_data = x[1] - x[0]
+            fac = dx_data/dx_orig
+        elif x is not None or y is not None:
+            raise ValueError('send both x and y')
+        else:
+            x = self.x
+            y = self.y
+            dx_data = dx_orig
+            fac = 1
+
+        plt.bar(
+            x,
+            y,
+            label='data',
+            width=dx_data,
+            alpha=0.5,
+            color='#a6a6a6',
+        )
+
+        model = fac*self.eval(
+            pars, components=components,
+            x=x,
+        )
+
+        plt.curve(x, model, label='model')
+
+        if components is None:
+            components = range(self.ngauss)
+
+        npars_per = 3
+        for i in components:
+            start = i*npars_per
+            end = (i+1)*npars_per
+
+            tpars = pars[start:end]
+            tmodel = fac*self.eval_one(tpars, x=x)
+
+            label = 'component %d' % i
+            plt.curve(x, tmodel, label=label)
+
+        if show:
+            plt.show()
+
+        if file is not None:
+            plt.savefig(file, dpi=dpi)
+
+        return plt
 
 
 def _gal_mean1_vs_rmag(*, rmag):
@@ -257,256 +681,6 @@ def get_star_priors(*, rng, data, rmag, nstar, nstar_err):
         covar2_prior,
         num2_prior,
     ]
-
-
-class Fitter(object):
-    def __init__(
-        self,
-        *,
-        x, y, yerr,
-        star_priors,
-        gal_priors,
-        rng,
-    ):
-
-        self.rng = rng
-
-        self.x = x
-        self.y = y
-        self.yerr = yerr.clip(min=1)
-
-        self.binsize = x[1] - x[0]
-
-        assert len(star_priors) % 3 == 0
-        assert len(gal_priors) % 3 == 0
-
-        self.star_priors = star_priors
-        self.gal_priors = gal_priors
-        self.priors = self.star_priors + self.gal_priors
-
-        self.star_ngauss = len(star_priors)//3
-        self.gal_ngauss = len(gal_priors)//3
-        self.ngauss = self.star_ngauss + self.gal_ngauss
-
-        self.n_prior_pars = 3*self.ngauss
-        assert len(self.priors) == self.n_prior_pars
-
-        self.fdiff_size = self.n_prior_pars + self.x.size
-
-        # self.bounds = [
-        #     (None, None),
-        #     # (1.0e-9, None),
-        #     (1.0e-10, None),
-        #     (0, None),
-        # ]*self.ngauss
-
-        self.bounds = []
-        for prior in self.priors:
-            self.bounds += [prior.bounds]
-
-    def go(self, ntry=100):
-
-        ngauss = self.ngauss
-
-        # ysum = self.y.sum()
-        npars_per = 3
-
-        for i in range(ntry):
-            self.guess = np.zeros(npars_per*ngauss)
-
-            for ip, prior in enumerate(self.priors):
-                self.guess[ip] = prior.sample(sigma_factor=1)
-                # self.guess[ip] = prior.sample(sigma_factor=0.1)
-
-            print_pars(self.guess, front='guess: ')
-            self.result = run_leastsq(
-                self._errfunc,
-                self.guess,
-                self.n_prior_pars,
-                bounds=self.bounds,
-                maxfev=4000,
-            )
-            if self.result['flags'] == 0:
-                break
-
-    def _scale_leastsq_cov(self, pars, pcov):
-        """
-        Scale the covariance matrix returned from leastsq; this will
-        recover the covariance of the parameters in the right units.
-        """
-        dof = (self.x.size-len(pars))
-        s_sq = (self._errfunc(pars)**2).sum()/dof
-        return pcov * s_sq
-
-    def eval(self, pars, x=None, components=None):
-
-        if x is None:
-            x = self.x
-
-        model = np.zeros(x.size)
-        npars_per = 3
-
-        if components is None:
-            components = range(self.ngauss)
-
-        for i in components:
-            start = i*npars_per
-            end = (i+1)*npars_per
-
-            tpars = pars[start:end]
-            tmodel = self.eval_one(tpars, x=x)
-            model[:] += tmodel
-        return model
-
-    def eval_one(self, pars, x=None):
-        if x is None:
-            x = self.x
-
-        mn = pars[0]
-        sigma2 = pars[1]
-        amp = pars[2] * self.binsize
-
-        arg = -0.5 * (mn - x)**2/sigma2
-
-        return amp * np.exp(arg)/np.sqrt(2*np.pi*sigma2)
-
-    def eval_priors(self, pars):
-        """
-        pars are [
-            cen1, sigma^2_1, amp1,
-            cen2, sigma^2_2, amp2,
-            ...
-        ]
-        """
-
-        assert pars.size == len(self.priors)
-
-        priors_fdiff = np.zeros(self.n_prior_pars)
-
-        for i, prior in enumerate(self.priors):
-            priors_fdiff[i] = prior.get_fdiff(pars[i])
-
-        return priors_fdiff
-
-    def _errfunc(self, pars):
-        # print_pars(pars, front='pars: ')
-
-        # diff = np.zeros(self.y.size)
-        model = self.eval(pars)
-
-        diff = (model-self.y)/self.yerr
-
-        fdiff = np.zeros(self.fdiff_size)
-
-        fdiff[0:self.n_prior_pars] = self.eval_priors(pars)
-        fdiff[self.n_prior_pars:] = diff
-        return fdiff
-
-    def plot(
-        self, *,
-        x=None,
-        y=None,
-        components=None,
-        min=None,
-        max=None,
-        npts=None,
-        data=None,
-        nbin=None,
-        binsize=None,
-        file=None,
-        dpi=100,
-        show=False,
-        **plot_kws
-    ):
-        """
-        plot the model and each component.  Optionally plot a set of
-        data as well.  Currently only works for 1d
-
-        Parameters
-        ----------
-        min: float
-            Min value to plot, if data is sent then this can be left
-            out and the min value will be gotten from that data.
-        max: float
-            Max value to plot, if data is sent then this can be left
-            out and the max value will be gotten from that data.
-        npts: int, optional
-            Number of points to use for the plot.  If data are sent you
-            can leave this off and a suitable value will be chosen based
-            on the data binsize
-        data: array, optional
-            Optional data to plot as a histogram
-        nbin: int, optional
-            Optional number of bins for histogramming data
-        binsize: float, optional
-            Optional binsize for histogramming data
-        file: str, optional
-            Optionally write out a plot file
-        dpi: int, optional
-            Optional dpi for graphics like png, default 100
-        show: bool, optional
-            If True, show the plot on the screen
-
-        Returns
-        -------
-        plot object
-        """
-        import hickory
-
-        pars = self.result['pars']
-
-        plt = hickory.Plot(**plot_kws)
-
-        dx_orig = self.x[1] - self.x[0]
-
-        if x is not None and y is not None:
-            dx_data = x[1] - x[0]
-            fac = dx_data/dx_orig
-        elif x is not None or y is not None:
-            raise ValueError('send both x and y')
-        else:
-            x = self.x
-            y = self.y
-            dx_data = dx_orig
-            fac = 1
-
-        plt.bar(
-            x,
-            y,
-            label='data',
-            width=dx_data,
-            alpha=0.5,
-            color='#a6a6a6',
-        )
-
-        model = fac*self.eval(
-            pars, components=components,
-            x=x,
-        )
-
-        plt.curve(x, model, label='model')
-
-        if components is None:
-            components = range(self.ngauss)
-
-        npars_per = 3
-        for i in components:
-            start = i*npars_per
-            end = (i+1)*npars_per
-
-            tpars = pars[start:end]
-            tmodel = fac*self.eval_one(tpars, x=x)
-
-            label = 'component %d' % i
-            plt.curve(x, tmodel, label=label)
-
-        if show:
-            plt.show()
-
-        if file is not None:
-            plt.savefig(file, dpi=dpi)
-
-        return plt
 
 
 def fit_conc_hists(*, data, prior_file, rmag_index, seed):
