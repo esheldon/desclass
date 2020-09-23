@@ -210,7 +210,8 @@ def main():
 
     t, inj = read(flist)
 
-    amp = get_amp(args=args, data=t)
+    amp, amp_err = get_amp(args=args, data=t)
+
     # edges = [
     #     (21, 22),
     #     (22, 23),

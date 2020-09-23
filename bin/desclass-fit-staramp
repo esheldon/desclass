@@ -27,7 +27,7 @@ if __name__ == '__main__':
 
     rmag = t['psf_mag'][:, args.rmag_index]
 
-    amp = get_amp(
+    amp, amp_err = get_amp(
         rmag=rmag,
         conc=t['conc'],
         output=args.output,
