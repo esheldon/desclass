@@ -1,0 +1,91 @@
+#!/usr/bin/env python
+"""
+collate all extensions of the input fits files
+"""
+
+from argparse import ArgumentParser
+import esutil as eu
+import matplotlib
+import matplotlib.pyplot as mplt
+
+matplotlib.use('PDF')
+rc = matplotlib.rcParams
+rc['text.usetex'] = True
+rc['mathtext.fontset'] = 'cm'
+rc['font.family'] = 'cmr10'
+rc['xtick.top'] = True
+rc['ytick.right'] = True
+rc['xtick.minor.visible'] = True
+rc['ytick.minor.visible'] = True
+
+# in points
+rc['xtick.major.size'] = 8
+rc['xtick.minor.size'] = 4
+rc['ytick.major.size'] = 8
+rc['ytick.minor.size'] = 4
+
+rc['xtick.direction'] = 'in'
+rc['ytick.direction'] = 'in'
+
+rc['axes.formatter.use_mathtext'] = True
+rc['axes.labelsize'] = 18
+rc['xtick.labelsize'] = 16
+rc['ytick.labelsize'] = 16
+rc['axes.xmargin'] = 0.1
+rc['axes.ymargin'] = 0.1
+rc['figure.constrained_layout.use'] = True
+
+rc['lines.linewidth'] = 1
+
+
+def get_args():
+    parser = ArgumentParser()
+
+    parser.add_argument('-o', '--output', required=True,
+                        help="output file")
+
+    parser.add_argument('-i', '--input', nargs='+', required=True,
+                        help="input files")
+
+    parser.add_argument('--label', help="label for plot")
+    return parser.parse_args()
+
+
+def make_fig(data, label=None):
+    fig = mplt.Figure(figsize=(10, 6.18))
+    fig.subplots()
+
+    ax = fig.axes[0]
+    ax.axhline(0, color='black', alpha=0.5)
+    ax.set(
+        xlabel='r mag psf',
+        ylabel='concentration',
+        xlim=(14, 26),
+        ylim=(-0.01, 0.025),
+    )
+    ax.plot(
+        data['psf_mag'][:, 1],
+        data['conc'],
+        marker=',',
+        linestyle='',
+        color='#a50026',
+    )
+
+    if label is not None:
+        ax.text(15, 0.02, label, fontsize=16)
+
+    return fig
+
+
+def main():
+    args = get_args()
+
+    data = eu.io.read(args.input)
+
+    fig = make_fig(data, label=args.label)
+    print('writing:', args.output)
+    fig.savefig(args.output)
+
+
+if __name__ == '__main__':
+    main()
