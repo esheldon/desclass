@@ -7,7 +7,7 @@ import ngmix
 from matplotlib.backends.backend_pdf import PdfPages
 # import scipy.optimize
 # from ngmix.fitting import run_leastsq
-# from ngmix import print_pars
+from ngmix import print_pars
 # from glob import glob
 
 
@@ -27,6 +27,128 @@ def fit_gmm(*, rng, data, ngauss, min_covar=1.0e-12,
 
     plt = gmm.plot(
         data=data, binsize=binsize, title=label,
+        legend=True,
+        show=show,
+        file=output,
+    )
+
+    return gmm, plt
+
+
+def fit_stars_constrained(
+    *, rng, data, ngauss, min_covar=1.0e-12,
+    show=False, output=None, label=None
+):
+    from . import cem
+
+    mn, sig = eu.stat.sigma_clip(data)
+
+    assert ngauss == 3
+    guess = cem.make_gmix(ngauss)
+    cem.gauss_set(
+        guess[0],
+        0.6*data.size,
+        mn - 0.1*abs(mn),
+        sig*0.9,
+    )
+    cem.gauss_set(
+        guess[1],
+        0.3*data.size,
+        mn + 0.1*abs(mn),
+        sig*1.1,
+    )
+    cem.gauss_set(
+        guess[2],
+        0.1*data.size,
+        mn + 2*abs(mn),
+        sig*1.5,
+    )
+
+    num_low = np.array([
+        guess['num'][0]*1.01,
+        guess['num'][1]*1.01,
+        guess['num'][2]*1.01,
+    ])
+    num_high = np.array([
+        guess['num'][0]*0.99,
+        guess['num'][1]*0.99,
+        guess['num'][2]*0.99,
+    ])
+
+    gmm, info = cem.run_em(
+        data=np.array(data, copy=False, dtype='f8'),
+        guess=guess,
+        maxiter=2000,
+        sigma_low=1.0e-5,
+        sigma_high=0.005,
+        num_low=num_low,
+        num_high=num_high,
+    )
+
+    std = data.std()
+    binsize = std/7
+
+    plt = cem.plot_gmix(
+        gmix=gmm,
+        data=data,
+        binsize=binsize, title=label,
+        legend=True,
+        show=show,
+        file=output,
+    )
+
+    return gmm, plt
+
+
+def fit_gals_constrained(
+    *, rng, data, ngauss, min_covar=1.0e-12,
+    show=False, output=None, label=None
+):
+    from . import cem
+
+    mn, sig = eu.stat.sigma_clip(data)
+
+    assert ngauss == 2
+    guess = cem.make_gmix(ngauss)
+    cem.gauss_set(
+        guess[0],
+        0.6*data.size,
+        0.8*mn,
+        sig*0.4,
+    )
+    cem.gauss_set(
+        guess[1],
+        0.4*data.size,
+        1.2*mn,
+        sig*0.6,
+    )
+
+    num_low = np.array([
+        guess['num'][0]*1.01,
+        guess['num'][1]*1.01,
+    ])
+    num_high = np.array([
+        guess['num'][0]*0.99,
+        guess['num'][1]*0.99,
+    ])
+
+    gmm, info = cem.run_em(
+        data=np.array(data, copy=False, dtype='f8'),
+        guess=guess,
+        maxiter=2000,
+        sigma_low=0.001,
+        sigma_high=0.02,
+        num_low=num_low,
+        num_high=num_high,
+    )
+
+    std = data.std()
+    binsize = std/7
+
+    plt = cem.plot_gmix(
+        gmix=gmm,
+        data=data,
+        binsize=binsize, title=label,
         legend=True,
         show=show,
         file=output,
@@ -137,29 +259,46 @@ def get_struct(*, size, star_ngauss, gal_ngauss):
 
 
 def pack_struct(*, rmagmin, rmagmax, star_gmm, gal_gmm):
+
+    if isinstance(star_gmm, np.ndarray):
+        s = (-star_gmm['weight']).argsort()
+        star_weights = star_gmm['weight'][s]
+        star_means = star_gmm['mean'][s]
+        star_sigmas = star_gmm['sigma'][s]
+    else:
+        s = (-star_gmm.weights.ravel()).argsort()
+        star_weights = star_gmm.weights.ravel()[s]
+        star_means = star_gmm.means.ravel()[s]
+        star_sigmas = np.sqrt(star_gmm.covars.ravel()[s])
+
+    if isinstance(gal_gmm, np.ndarray):
+        s = (-gal_gmm['weight']).argsort()
+        gal_weights = gal_gmm['weight'][s]
+        gal_means = gal_gmm['mean'][s]
+        gal_sigmas = gal_gmm['sigma'][s]
+    else:
+        s = (-gal_gmm.weights.ravel()).argsort()
+        gal_weights = gal_gmm.weights.ravel()[s]
+        gal_means = gal_gmm.means.ravel()[s]
+        gal_sigmas = np.sqrt(gal_gmm.covars.ravel()[s])
+
     struct = get_struct(
         size=1,
-        star_ngauss=star_gmm.weights.size,
-        gal_ngauss=gal_gmm.weights.size,
+        star_ngauss=star_means.size,
+        gal_ngauss=gal_means.size,
     )
 
     struct['rmagmin'] = rmagmin
     struct['rmagmax'] = rmagmax
     struct['rmag_centers'] = 0.5*(rmagmax + rmagmin)
 
-    s = (-star_gmm.weights.ravel()).argsort()
-    struct['star_weights'][0] = star_gmm.weights.ravel()[s]
-    struct['star_means'][0] = star_gmm.means.ravel()[s]
-    struct['star_sigmas'][0] = np.sqrt(
-        star_gmm.covars.ravel()[s]
-    )
+    struct['star_weights'][0] = star_weights
+    struct['star_means'][0] = star_means
+    struct['star_sigmas'][0] = star_sigmas
 
-    s = (-gal_gmm.weights.ravel()).argsort()
-    struct['gal_weights'][0] = gal_gmm.weights.ravel()[s]
-    struct['gal_means'][0] = gal_gmm.means.ravel()[s]
-    struct['gal_sigmas'][0] = np.sqrt(
-        gal_gmm.covars.ravel()[s]
-    )
+    struct['gal_weights'][0] = gal_weights
+    struct['gal_means'][0] = gal_means
+    struct['gal_sigmas'][0] = gal_sigmas
 
     return struct
 
@@ -172,6 +311,7 @@ def plot_all(*, struct, type, show=False, output=None):
         label = 'galaxies'
 
     tab = hickory.Table(
+        figsize=(11, 11*0.618),
         nrows=2,
         ncols=2,
     )
@@ -211,23 +351,82 @@ def plot_all(*, struct, type, show=False, output=None):
             print(poly)
             tab[0, 1].curve(centers, poly(centers), color='black')
         else:
-            pass
-            # from .fitting import fit_exp, exp_func
-            #
-            # if igauss == 0:
-            #     guess = [-1.0e-6, 16, 1]
-            # else:
-            #     guess = [+1.0e-6, 16, 1]
-            # res = fit_exp(centers, means, guess)
+            from .fitting import fit_exp, exp_func
+
+            if igauss == 0:
+                guess = [-3.0e-9, 13, 0.5]
+            elif igauss == 1:
+                guess = [-4.5e-10, 17, 0.5]
+            else:
+                guess = [+7.5e-8, 11, 1.1]
+
+            res = fit_exp(centers, means, guess)
             # assert res['flags'] == 0
-            # print_pars(
-            #     res['pars'], front='star mean exp pars: ',
-            #     fmt='%.6g',
-            # )
-            # tab[0, 1].curve(centers, exp_func(res['pars'], centers),
-            #                 color='black')
-            #
+            print('star', igauss, 'mean flags:', res['flags'])
+            print_pars(
+                res['pars'], front='star %d mean exp pars: ' % igauss,
+                fmt='%.6g',
+            )
+
+            if res['flags'] == 0:
+                p = exp_func(res['pars'], centers)
+                pcolor = 'black'
+            else:
+                p = exp_func(guess, centers)
+                pcolor = 'red',
+
+            tab[0, 1].curve(
+                centers,
+                # exp_func(res['pars'], centers),
+                p,
+                color=pcolor,
+            )
+            # tab[0, 1].set(ylim=[-0.0012, 0.007])
+            # tab[0, 1].set(ylim=[-0.0005, 0.0005])
+
         tab[0, 1].curve(centers, means, marker='o', markersize=1.5)
+
+        if type == 'star':
+            from .fitting import fit_exp_pedestal, exp_func_pedestal
+
+            if igauss == 0:
+                guess = [6.4e-09, 12.2, 0.96, 6.5e-05]
+            elif igauss == 1:
+                # guess = [1.5e-08, 10, 1.3, 1.5e-05]
+                guess = [6.4e-09, 11.5, 0.96, 0.0001]
+            else:
+                # guess = [6.5e-08, 9.6, 1.3, 0.0002]
+                guess = [2e-07, 11, 1.3, 0.00013]
+
+            from . import interp
+            sigmas = interp.smooth_data_hann3(sigmas.astype('f8'))
+            res = fit_exp_pedestal(centers, sigmas, guess)
+
+            # assert res['flags'] == 0
+            print('star', igauss, 'sigma flags:', res['flags'])
+            print_pars(
+                res['pars'], front='star %d sigma exp pars: ' % igauss,
+                fmt='%.6g',
+            )
+
+            # if res['flags'] == 0:
+            #     p = exp_func_pedestal(res['pars'], centers)
+            #     pcolor = 'black'
+            # else:
+            #     p = exp_func_pedestal(guess, centers)
+            #     pcolor = 'red'
+            p = exp_func_pedestal(guess, centers)
+            pcolor = 'red'
+
+            tab[1, 0].curve(
+                centers,
+                p,
+                color=pcolor,
+            )
+            # tab[0, 1].set(ylim=[-0.0012, 0.007])
+            # tab[1, 0].set(ylim=[0, 0.003])
+            tab[1, 0].set_yscale('log')
+
         tab[1, 0].curve(centers, sigmas, marker='o', markersize=1.5)
 
     if show:
@@ -321,7 +520,8 @@ def fit_priors(*, seed, file, rmag_index, show=False):
 
         label = r'[%.2f, %.2f]' % (rmagmin, rmagmax)
 
-        star_gmm, star_plt = fit_gmm(
+        # star_gmm, star_plt = fit_gmm(
+        star_gmm, star_plt = fit_stars_constrained(
             rng=rng,
             data=star_conc,
             ngauss=star_ngauss,
@@ -329,7 +529,8 @@ def fit_priors(*, seed, file, rmag_index, show=False):
             label='stars rmag: %s' % label,
         )
         pdf.savefig(figure=star_plt)
-        gal_gmm, gal_plt = fit_gmm(
+        # gal_gmm, gal_plt = fit_gmm(
+        gal_gmm, gal_plt = fit_gals_constrained(
             rng=rng,
             data=gal_conc,
             ngauss=gal_ngauss,

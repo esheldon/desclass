@@ -70,15 +70,15 @@ def exp_func(pars, x):
 
     xc = np.array(x).clip(min=off)
 
+    output = np.zeros(x.size) + np.inf
+
     arg = (xc - off)/sigma
-    return amp * (np.exp(arg) - 1)
-    # model = np.zeros(x.size)
-    # w, = np.where(x > off)
-    # if w.size > 0:
-    #     arg = (x[w] - off)/sigma
-    #     model[w] = amp * (np.exp(arg) - 1)
-    #
-    # return model
+
+    wgood, = np.where(arg < 30)
+    if wgood.size > 0:
+        output[wgood] = amp * (np.exp(arg[wgood]) - 1)
+
+    return output
 
 
 def fit_exp(x, y, guess):
@@ -93,4 +93,42 @@ def fit_exp(x, y, guess):
         maxfev=4000,
         xtol=1.0e-5,
         ftol=1.0e-5,
+    )
+
+
+def exp_func_pedestal(pars, x):
+    amp = pars[0]
+    off = pars[1]
+    sigma = pars[2]
+    pedestal = pars[3]
+
+    xc = np.array(x).clip(min=off)
+
+    arg = (xc - off)/sigma
+
+    w, = np.where(arg > 30)
+    if w.size > 0:
+        return x*0 + np.inf
+
+    return amp * (np.exp(arg) - 1) + pedestal
+
+
+def fit_exp_pedestal(x, y, guess):
+    def loss(pars):
+        model = exp_func_pedestal(pars, x)
+        return (model - y)
+
+    return run_leastsq(
+        loss,
+        np.array(guess),
+        0,
+        maxfev=4000,
+        xtol=1.0e-5,
+        ftol=1.0e-5,
+        bounds=[
+            (1.0e-10, 0.1),
+            (5, 25),
+            (0.1, 3),
+            (1.0e-7, 0.001),
+        ]
     )
