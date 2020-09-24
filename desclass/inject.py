@@ -42,6 +42,9 @@ def inject_star_into_obs(*, rng, obs, star_flux, poisson=True):
 
         new_image = rng.poisson(lam=simage).astype('f8')
 
+        # back to standard zero point
+        new_image *= obs.meta['scale']
+
     weight_for_noise = weight.copy()
     w = np.where(weight_for_noise <= 0)
     if w[0].size > 0:
