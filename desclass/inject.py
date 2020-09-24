@@ -56,7 +56,8 @@ def inject_star_into_obs(*, rng, obs, star_flux, poisson=True):
     new_obs = ngmix.Observation(
         new_image,
         weight=weight,
-        jacobian=obs.psf.jacobian,
+        # jacobian=obs.psf.jacobian,
+        jacobian=obs.jacobian,
         psf=obs.psf,
     )
 
