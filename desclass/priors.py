@@ -4,9 +4,10 @@ import esutil as eu
 from esutil.numpy_util import between
 import hickory
 import ngmix
+from matplotlib.backends.backend_pdf import PdfPages
 # import scipy.optimize
 # from ngmix.fitting import run_leastsq
-from ngmix import print_pars
+# from ngmix import print_pars
 # from glob import glob
 
 
@@ -21,18 +22,17 @@ def fit_gmm(*, rng, data, ngauss, min_covar=1.0e-12,
         rng=rng,
     )
 
-    if show or output is not None:
-        std = data.std()
-        binsize = std/7
+    std = data.std()
+    binsize = std/7
 
-        gmm.plot(
-            data=data, binsize=binsize, title=label,
-            legend=True,
-            show=show,
-            file=output,
-        )
+    plt = gmm.plot(
+        data=data, binsize=binsize, title=label,
+        legend=True,
+        show=show,
+        file=output,
+    )
 
-    return gmm
+    return gmm, plt
 
 
 def test_2gauss():
@@ -211,21 +211,22 @@ def plot_all(*, struct, type, show=False, output=None):
             print(poly)
             tab[0, 1].curve(centers, poly(centers), color='black')
         else:
-            from .fitting import fit_exp, exp_func
-
-            if igauss == 0:
-                guess = [-1.0e-6, 16, 1]
-            else:
-                guess = [+1.0e-6, 16, 1]
-            res = fit_exp(centers, means, guess)
-            assert res['flags'] == 0
-            print_pars(
-                res['pars'], front='star mean exp pars: ',
-                fmt='%.6g',
-            )
-            tab[0, 1].curve(centers, exp_func(res['pars'], centers),
-                            color='black')
-
+            pass
+            # from .fitting import fit_exp, exp_func
+            #
+            # if igauss == 0:
+            #     guess = [-1.0e-6, 16, 1]
+            # else:
+            #     guess = [+1.0e-6, 16, 1]
+            # res = fit_exp(centers, means, guess)
+            # assert res['flags'] == 0
+            # print_pars(
+            #     res['pars'], front='star mean exp pars: ',
+            #     fmt='%.6g',
+            # )
+            # tab[0, 1].curve(centers, exp_func(res['pars'], centers),
+            #                 color='black')
+            #
         tab[0, 1].curve(centers, means, marker='o', markersize=1.5)
         tab[1, 0].curve(centers, sigmas, marker='o', markersize=1.5)
 
@@ -235,6 +236,8 @@ def plot_all(*, struct, type, show=False, output=None):
     if output is not None:
         print('writing:', output)
         tab.savefig(output, dpi=100)
+
+    return tab
 
 
 def get_output_file(*, infile, extra=None, ext='fits'):
@@ -257,13 +260,21 @@ def fit_priors(*, seed, file, rmag_index, show=False):
 
     rng = np.random.RandomState(seed)
 
-    data = fitsio.read(file)
-
-    star_ngauss = 2
+    star_ngauss = 3
     gal_ngauss = 2
 
-    # off = 0.007
-    # power = 0.5
+    extra0 = 'star%d-gal%d' % (star_ngauss, gal_ngauss)
+
+    pdf_file = get_output_file(
+        infile=file,
+        extra=extra0+'-plots',
+        ext='pdf',
+    )
+
+    print('writing plots to:', pdf_file)
+    pdf = PdfPages(pdf_file)
+
+    data = fitsio.read(file)
 
     edges = [
         (19.0, 20.0),
@@ -309,31 +320,23 @@ def fit_priors(*, seed, file, rmag_index, show=False):
         print('ngals:', wgal.size)
 
         label = r'[%.2f, %.2f]' % (rmagmin, rmagmax)
-        star_pdf_file = get_output_file(
-            infile=file, extra='stars-%.2f-%.2f' % (rmagmin, rmagmax),
-            ext='pdf',
-        )
-        gal_pdf_file = get_output_file(
-            infile=file, extra='gals-%.2f-%.2f' % (rmagmin, rmagmax),
-            ext='pdf',
-        )
 
-        star_gmm = fit_gmm(
+        star_gmm, star_plt = fit_gmm(
             rng=rng,
             data=star_conc,
             ngauss=star_ngauss,
             show=show,
-            output=star_pdf_file,
             label='stars rmag: %s' % label,
         )
-        gal_gmm = fit_gmm(
+        pdf.savefig(figure=star_plt)
+        gal_gmm, gal_plt = fit_gmm(
             rng=rng,
             data=gal_conc,
             ngauss=gal_ngauss,
             show=show,
-            output=gal_pdf_file,
             label='gals rmag: %s' % label,
         )
+        pdf.savefig(figure=gal_plt)
 
         tstruct = pack_struct(
             rmagmin=rmagmin,
@@ -342,15 +345,13 @@ def fit_priors(*, seed, file, rmag_index, show=False):
         )
         struct[i] = tstruct
 
-    star_pdf_file = get_output_file(
-        infile=file, extra='star-trends', ext='pdf',
-    )
-    gal_pdf_file = get_output_file(
-        infile=file, extra='gal-trends', ext='pdf',
-    )
-    plot_all(struct=struct, type='star', output=star_pdf_file, show=show)
-    plot_all(struct=struct, type='gal', output=gal_pdf_file, show=show)
+    star_plt = plot_all(struct=struct, type='star', show=show)
+    gal_plt = plot_all(struct=struct, type='gal', show=show)
+    pdf.savefig(figure=star_plt)
+    pdf.savefig(figure=gal_plt)
+    print('closing:', pdf_file)
+    pdf.close()
 
-    outfile = get_output_file(infile=file)
+    outfile = get_output_file(infile=file, extra=extra0)
     print('writing:', outfile)
     fitsio.write(outfile, struct, clobber=True)

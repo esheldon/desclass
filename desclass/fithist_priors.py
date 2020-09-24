@@ -294,6 +294,7 @@ def fit_priors(*, seed, file, rmag_index, show=False):
     ]
     # edges = [(24.5, 25)]
     # edges = [(20.5, 21)]
+    # edges = [(24.0, 24.1)]
 
     # power = 0.5
     # off = 0.015
