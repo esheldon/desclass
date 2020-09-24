@@ -8,7 +8,7 @@ from . import staramp
 from .constants import MAGZP
 
 
-def inject_star_into_obs(*, rng, obs, star_flux):
+def inject_star_into_obs(*, rng, obs, star_flux, poisson=True):
     """
     inject a star into the observation
 
@@ -19,6 +19,10 @@ def inject_star_into_obs(*, rng, obs, star_flux):
         The random number generator
     obs: ngmix.Observation
         Observation to be replaced with the injected star.
+    star_flux: float
+        Flux for the star
+    poisson: bool
+        If True, the signal is a poisson deviate.  Default True
 
     Returns
     -------
@@ -31,7 +35,12 @@ def inject_star_into_obs(*, rng, obs, star_flux):
     # new_image *= obs.meta['psf_flux']/new_image.sum()
     new_image *= star_flux/new_image.sum()
 
-    noise = np.zeros(new_image.shape)
+    if poisson:
+        # now in electrons, which are poisson distributed
+        simage = new_image / obs.meta['scale']
+        simage.clip(min=0, max=None, out=simage)
+
+        new_image = rng.poisson(lam=simage).astype('f8')
 
     weight_for_noise = weight.copy()
     w = np.where(weight_for_noise <= 0)
