@@ -4,14 +4,13 @@ from numba import njit
 MIN_SIGMA_DEFAULT = 1.0e-100
 
 GAUSS_DTYPE = [
-    ('num', 'f8'),
+    ('weight', 'f8'),
     ('mean', 'f8'),
     ('sigma', 'f8'),
     ('icovar', 'f8'),
     ('norm', 'f8'),
 
     # not used in processing but useful later
-    ('weight', 'f8'),
 ]
 
 
@@ -36,9 +35,9 @@ def run_em(
         Consider converged when log likelihood changes
         by less than this amount
 
-    num_low: scalar or array
+    weight_low: scalar or array
         Lower bound on the amplitude for one or all of the gaussians
-    num_high: scalar or array
+    weight_high: scalar or array
         Upper bound on the amplitude for one or all of the gaussians
 
     mean_low: scalar or array
@@ -84,13 +83,9 @@ def run_em(
         do_m_step(gmix, data, T)
 
         _apply_constraints(gmix=gmix, **constraints)
-        # print('after constraints')
-        # gmix_print(gmix)
-        # input('hit a key')
 
         loglike = get_loglike(gmix, data)
 
-        # absdiff = np.abs(loglike - loglike_old)
         absdiff = np.abs(loglike/loglike_old - 1)
         if absdiff < tol:
             converged = True
@@ -98,7 +93,6 @@ def run_em(
 
         loglike_old = loglike
 
-    gmix_set_weights(gmix)
     info = {
         'converged': converged,
         'numiter': i+1,
@@ -164,12 +158,17 @@ def plot_gmix(
 
     if data is not None:
 
-        dx_data = binsize
-
         if min is None:
             min = data.min()
         if max is None:
             max = data.max()
+
+        if binsize is not None:
+            dx_data = binsize
+        elif nbin is not None:
+            dx_data = (min - max)/nbin
+        else:
+            raise ValueError('send either binsize or nbin when sending data')
 
         if npts is None:
             dx_model = dx_data/10
@@ -261,7 +260,7 @@ def gmix_sample(gmix, rng, size=None, components=None):
     if components is None:
         components = np.arange(gmix.size)
 
-    weights = gmix['num'][components]/gmix['num'][components].sum()
+    weights = gmix['weight'][components]/gmix['weight'][components].sum()
     means = gmix['mean'][components]
     sigmas = gmix['sigma'][components]
 
@@ -297,7 +296,7 @@ def gauss_print(gauss):
         The gaussian to print
     """
     s = '%g %g %g'
-    print(s % (gauss['num'], gauss['mean'], gauss['sigma']))
+    print(s % (gauss['weight'], gauss['mean'], gauss['sigma']))
 
 
 def gmix_print(gmix):
@@ -313,7 +312,7 @@ def gmix_print(gmix):
 
         gauss = gmix[i]
         s = '%d  %g %g %g' % (
-            i, gauss['num'], gauss['mean'], gauss['sigma']
+            i, gauss['weight'], gauss['mean'], gauss['sigma']
         )
         print(s)
 
@@ -331,7 +330,7 @@ def make_gmix(n):
 
 
 @njit
-def gauss_set(gauss, num, mean, sigma):
+def gauss_set(gauss, weight, mean, sigma):
     """
     Set the parameters of a gaussian
 
@@ -339,8 +338,8 @@ def gauss_set(gauss, num, mean, sigma):
     ----------
     gauss: gaussian
         The gaussian to set
-    num: float
-        The amplitude of the gaussian, the approximate number in
+    weight: float
+        The amplitude of the gaussian
         the cluster
     mean: float
         The mean of the gaussian
@@ -350,12 +349,11 @@ def gauss_set(gauss, num, mean, sigma):
     if sigma < MIN_SIGMA_DEFAULT:
         sigma = MIN_SIGMA_DEFAULT
 
-    gauss['num'] = num
+    gauss['weight'] = weight
     gauss['mean'] = mean
     gauss['sigma'] = sigma
     gauss['icovar'] = 1/sigma**2
-    gauss['norm'] = num/np.sqrt(2 * np.pi)/sigma
-    gauss['weight'] = -np.inf
+    gauss['norm'] = weight/np.sqrt(2 * np.pi)/sigma
 
 
 def gauss_eval(gauss, x):
@@ -497,25 +495,21 @@ def gmix_eval_array(gmix, x):
     return output
 
 
-def gmix_set_weights(gmix):
-    """
-    set the weight field in each gaussian.  We use raw number
-    in the fitting but the weight is also useful num/sum(num)
+@njit
+def gmix_get_mean(gmix):
+    wsum = gmix['weight'].sum()
+    return (gmix['weight']*gmix['mean']).sum()/wsum
 
-    Parameters
-    ----------
-    gmix: the gaussian mixture
-        The mixture to evaluate
+@njit
+def gmix_get_sigma(gmix):
 
-    Returns
-    -------
-    None
-    """
-    nsum = gmix['num'].sum()
-    if nsum > 0:
-        gmix['weight'] = gmix['num']/nsum
-    else:
-        gmix['weight'] = 0
+    mean = gmix_get_mean(gmix)
+
+    diff = gmix['mean'] - mean
+
+    wsum = gmix['weight'].sum()
+    var = ((gmix['sigma']**2 + diff ** 2) * gmix['weight']).sum() / wsum
+    return np.sqrt(var)
 
 
 @njit
@@ -542,7 +536,8 @@ def get_loglike(gmix, x):
         loglike += np.log(s)
 
     # because we don't normalize the amplitudes
-    return loglike - np.log(x.size)
+    # return loglike - np.log(x.size)
+    return loglike
 
 
 @njit
@@ -581,70 +576,6 @@ def do_e_step(gmix, x, T):
 
 
 @njit
-def do_m_step_Tsum(gmix, x, T):
-    """
-    perform the maximization step, filling the mixture with
-    the new parameters
-
-    Parameters
-    ----------
-    gmix: the gaussian mixture
-        The mixture to evaluate
-    x: array
-        The positions at which to evaluate the mixture
-    T: array[npoints, ngauss]
-        The T array
-
-    Returns
-    -------
-    None
-    """
-
-    ngauss = gmix.size
-    npoints = x.size
-
-    num_new_sums = np.zeros(ngauss)
-    mean_new = np.zeros(ngauss)
-    sigma_new = np.zeros(ngauss)
-
-    Tsum_tot = 0.0
-    for igauss in range(ngauss):
-        gauss = gmix[igauss]
-
-        Tsum = 0.0
-        mean_sum = 0.0
-        covar_sum = 0.0
-
-        mean = gauss['mean']
-
-        for ix in range(npoints):
-            xval = x[ix]
-            Tval = T[ix, igauss]
-
-            Tsum += Tval
-            mean_sum += Tval * xval
-            covar_sum += Tval*(xval - mean)**2
-
-        # num_new = Tsum/npoints
-        num_new_sums[igauss] = Tsum
-        mean_new[igauss] = mean_sum/Tsum
-        sigma_new[igauss] = np.sqrt(covar_sum/Tsum)
-
-        Tsum_tot += Tsum
-
-    for igauss in range(ngauss):
-        gauss = gmix[igauss]
-
-        num_new = num_new_sums[igauss]/Tsum_tot * npoints
-        gauss_set(
-            gauss,
-            num_new,
-            mean_new[igauss],
-            sigma_new[igauss],
-        )
-
-
-@njit
 def do_m_step(gmix, x, T):
     """
     perform the maximization step, filling the mixture with
@@ -667,7 +598,6 @@ def do_m_step(gmix, x, T):
     ngauss = gmix.size
     npoints = x.size
 
-    Tsum_tot = 0.0
     for igauss in range(ngauss):
         gauss = gmix[igauss]
 
@@ -685,19 +615,15 @@ def do_m_step(gmix, x, T):
             mean_sum += Tval * xval
             covar_sum += Tval*(xval - mean)**2
 
-        # num_new = Tsum/npoints
-        num_new = Tsum
+        weight_new = Tsum/npoints
         mean_new = mean_sum/Tsum
         covar_new = covar_sum/Tsum
 
         sigma_new = np.sqrt(covar_new)
 
-        Tsum_tot += Tsum
-
-        # print('num_new:', num_new)
         gauss_set(
             gauss,
-            num_new,
+            weight_new,
             mean_new,
             sigma_new,
         )
@@ -706,8 +632,8 @@ def do_m_step(gmix, x, T):
 def _apply_constraints(
     *,
     gmix,
-    num_low,
-    num_high,
+    weight_low,
+    weight_high,
     mean_low,
     mean_high,
     sigma_low,
@@ -723,9 +649,9 @@ def _apply_constraints(
     gmix: the gaussian mixture
         The mixture to evaluate
 
-    num_low: scalar or array
+    weight_low: scalar or array
         Lower bound on the amplitude for one or all of the gaussians
-    num_high: scalar or array
+    weight_high: scalar or array
         Upper bound on the amplitude for one or all of the gaussians
 
     mean_low: scalar or array
@@ -746,9 +672,9 @@ def _apply_constraints(
 
     reset = False
 
-    if num_low is not None or num_high is not None:
+    if weight_low is not None or weight_high is not None:
         reset = True
-        gmix['num'] = gmix['num'].clip(min=num_low, max=num_high)
+        gmix['weight'] = gmix['weight'].clip(min=weight_low, max=weight_high)
 
     if mean_low is not None or mean_high is not None:
         reset = True
@@ -764,7 +690,7 @@ def _apply_constraints(
             gauss = gmix[i]
             gauss_set(
                 gauss,
-                gauss['num'],
+                gauss['weight'],
                 gauss['mean'],
                 gauss['sigma'],
             )
@@ -789,14 +715,14 @@ def extract_constraint(*, ngauss, constraint, name):
     """
     if constraint is not None:
         constraint = np.array(constraint, ndmin=1, dtype='f8')
-        num = constraint.size
-        if num < ngauss:
-            if num == 1:
+        csize = constraint.size
+        if csize < ngauss:
+            if csize == 1:
                 constraint = np.zeros(ngauss) + constraint
             else:
                 raise ValueError(
                     'constraint %s must be size 1 or ngauss=%d'
-                    'got %d' % (name, ngauss, num)
+                    'got %d' % (name, ngauss, csize)
                 )
 
     return constraint
@@ -814,9 +740,9 @@ def extract_constraints(ngauss, kw):
     kw: dict
         Keys should be in this set
 
-        num_low: scalar or array
+        weight_low: scalar or array
             Lower bound on the amplitude for one or all of the gaussians
-        num_high: scalar or array
+        weight_high: scalar or array
             Upper bound on the amplitude for one or all of the gaussians
 
         mean_low: scalar or array
@@ -834,7 +760,7 @@ def extract_constraints(ngauss, kw):
     dict with all keys present
     """
     constraints = {}
-    ctypes = ['num', 'mean', 'sigma']
+    ctypes = ['weight', 'mean', 'sigma']
     for ctype in ctypes:
         for side in ['low', 'high']:
             cname = '%s_%s' % (ctype, side)

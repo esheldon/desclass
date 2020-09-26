@@ -47,32 +47,36 @@ def fit_stars_constrained(
     guess = cem.make_gmix(ngauss)
     cem.gauss_set(
         guess[0],
-        0.6*data.size,
+        0.6,
         mn - 0.1*abs(mn),
         sig*0.9,
     )
     cem.gauss_set(
         guess[1],
-        0.3*data.size,
+        0.3,
         mn + 0.1*abs(mn),
         sig*1.1,
     )
     cem.gauss_set(
         guess[2],
-        0.1*data.size,
+        0.1,
         mn + 2*abs(mn),
         sig*1.5,
     )
 
-    num_low = np.array([
-        guess['num'][0]*1.01,
-        guess['num'][1]*1.01,
-        guess['num'][2]*1.01,
+    width = 0.01
+    lfac = 1 - width
+    hfac = 1 + width
+
+    weight_low = np.array([
+        guess['weight'][0]*lfac,
+        guess['weight'][1]*lfac,
+        guess['weight'][2]*lfac,
     ])
-    num_high = np.array([
-        guess['num'][0]*0.99,
-        guess['num'][1]*0.99,
-        guess['num'][2]*0.99,
+    weight_high = np.array([
+        guess['weight'][0]*hfac,
+        guess['weight'][1]*hfac,
+        guess['weight'][2]*hfac,
     ])
 
     gmm, info = cem.run_em(
@@ -81,8 +85,8 @@ def fit_stars_constrained(
         maxiter=2000,
         sigma_low=1.0e-5,
         sigma_high=0.005,
-        num_low=num_low,
-        num_high=num_high,
+        weight_low=weight_low,
+        weight_high=weight_high,
     )
 
     std = data.std()
@@ -112,24 +116,27 @@ def fit_gals_constrained(
     guess = cem.make_gmix(ngauss)
     cem.gauss_set(
         guess[0],
-        0.6*data.size,
+        0.58,
         0.8*mn,
         sig*0.4,
     )
     cem.gauss_set(
         guess[1],
-        0.4*data.size,
+        0.42,
         1.2*mn,
         sig*0.6,
     )
 
-    num_low = np.array([
-        guess['num'][0]*1.01,
-        guess['num'][1]*1.01,
+    width = 0.01
+    lfac = 1 - width
+    hfac = 1 + width
+    weight_low = np.array([
+        guess['weight'][0]*lfac,
+        guess['weight'][1]*lfac,
     ])
-    num_high = np.array([
-        guess['num'][0]*0.99,
-        guess['num'][1]*0.99,
+    weight_high = np.array([
+        guess['weight'][0]*hfac,
+        guess['weight'][1]*hfac,
     ])
 
     gmm, info = cem.run_em(
@@ -138,8 +145,8 @@ def fit_gals_constrained(
         maxiter=2000,
         sigma_low=0.001,
         sigma_high=0.02,
-        num_low=num_low,
-        num_high=num_high,
+        weight_low=weight_low,
+        weight_high=weight_high,
     )
 
     std = data.std()
@@ -206,7 +213,7 @@ def select_stars(*, data, rmagmin, rmagmax, rmag_index):
     )
 
     mn, std = eu.stat.sigma_clip(data['conc'][w])
-    minconc, maxconc = [mn - 4*std, mn + 6*std]
+    minconc, maxconc = [mn - 5*std, mn + 6*std]
     ww, = np.where(
         between(data['conc'][w], minconc, maxconc)
     )
@@ -303,6 +310,105 @@ def pack_struct(*, rmagmin, rmagmax, star_gmm, gal_gmm):
     return struct
 
 
+def plot_all_scaled(*, struct, type, show=False, output=None):
+    """
+    plot scaled parameters vs rmag
+
+    weight
+    mean/sigma
+    sigma/sigma_tot
+    """
+    if type == 'star':
+        label = 'stars'
+    else:
+        label = 'galaxies'
+
+    tab = hickory.Table(
+        figsize=(11, 11*0.618),
+        nrows=2,
+        ncols=2,
+    )
+
+    tab[1, 1].axis('off')
+
+    tab[0, 0].set(
+        xlabel='r mag',
+        ylabel='weight',
+    )
+    tab[0, 1].set(
+        xlabel='r mag',
+        ylabel=r'mean/$\sigma_{\mathrm{tot}}$',
+    )
+
+    tab[1, 0].set(
+        xlabel='r mag',
+        ylabel=r'$\sigma/\sigma_{\mathrm{tot}}$',
+    )
+
+    if type == 'star':
+        label = 'stars'
+    else:
+        label = 'galaxies'
+    tab[1, 1].ntext(
+        0.5, 0.5, label,
+        horizontalalignment='center',
+        verticalalignment='center',
+        fontsize=16,
+    )
+
+    centers = struct['rmag_centers']
+    ngauss = struct['%s_weights' % type].shape[1]
+
+    # get overall sigma
+    tw = struct['%s_weights' % type]
+    tm = struct['%s_means' % type]
+    tv = struct['%s_sigmas' % type]**2
+    wsum = tw.sum(axis=1)
+
+    mean_tot = (tw*tm).sum(axis=1)/wsum
+
+    print('tm shape:', tm.shape)
+    print('mean_tot shape:', mean_tot.shape)
+    diff = tm.copy()
+    diff = tm - mean_tot[:, np.newaxis]
+    var = (tw * (tv + diff**2)).sum(axis=1)/wsum
+    sigma_tot = np.sqrt(var)
+
+    print('mean tot:', mean_tot)
+    print('mean tot scaled:', mean_tot/sigma_tot)
+    print('sigma tot:', sigma_tot)
+
+    for igauss in range(ngauss):
+
+        weights = struct['%s_weights' % type][:, igauss]
+        s_means = (struct['%s_means' % type][:, igauss] - mean_tot)/sigma_tot
+        s_sigmas = struct['%s_sigmas' % type][:, igauss]/sigma_tot
+
+        wmean = weights.mean()
+        print(type, igauss, 'weight mean: %.17g' % wmean)
+        tab[0, 0].axhline(wmean, color='black')
+        tab[0, 0].curve(centers, weights, marker='o', markersize=2)
+
+        s_mean_mean = s_means[:5].mean()
+        print(type, igauss, 'mean mean (zerod): %.17g' % s_mean_mean)
+        tab[0, 1].axhline(s_mean_mean, color='black')
+        tab[0, 1].curve(centers, s_means, marker='o', markersize=1.5)
+
+        s_sigma_mean = s_sigmas.mean()
+        print(type, igauss, 'sigma mean: %.17g' % s_sigma_mean)
+        tab[1, 0].axhline(s_sigma_mean, color='black')
+        tab[1, 0].curve(centers, s_sigmas, marker='o', markersize=1.5)
+
+    if show:
+        tab.show()
+
+    if output is not None:
+        print('writing:', output)
+        tab.savefig(output, dpi=100)
+
+    return tab
+
+
 def plot_all(*, struct, type, show=False, output=None):
 
     if type == 'star':
@@ -318,7 +424,6 @@ def plot_all(*, struct, type, show=False, output=None):
 
     tab[1, 1].axis('off')
 
-    tab[0, 0].ntext(0.1, 0.5, label, verticalalignment='center')
     tab[0, 0].set(
         xlabel='r mag',
         ylabel='weight',
@@ -330,6 +435,13 @@ def plot_all(*, struct, type, show=False, output=None):
     tab[1, 0].set(
         xlabel='r mag',
         ylabel=r'$\sigma$',
+    )
+
+    tab[1, 1].ntext(
+        0.5, 0.5, label,
+        horizontalalignment='center',
+        verticalalignment='center',
+        fontsize=16,
     )
 
     centers = struct['rmag_centers']
@@ -351,10 +463,12 @@ def plot_all(*, struct, type, show=False, output=None):
             print(poly)
             tab[0, 1].curve(centers, poly(centers), color='black')
         else:
+            pass
+            """
             from .fitting import fit_exp, exp_func
 
             if igauss == 0:
-                guess = [-3.0e-9, 13, 0.5]
+                guess = [-3.0e-9, 16, 0.5]
             elif igauss == 1:
                 guess = [-4.5e-10, 17, 0.5]
             else:
@@ -373,7 +487,7 @@ def plot_all(*, struct, type, show=False, output=None):
                 pcolor = 'black'
             else:
                 p = exp_func(guess, centers)
-                pcolor = 'red',
+                pcolor = 'red'
 
             tab[0, 1].curve(
                 centers,
@@ -383,6 +497,7 @@ def plot_all(*, struct, type, show=False, output=None):
             )
             # tab[0, 1].set(ylim=[-0.0012, 0.007])
             # tab[0, 1].set(ylim=[-0.0005, 0.0005])
+            """
 
         tab[0, 1].curve(centers, means, marker='o', markersize=1.5)
 
@@ -548,8 +663,13 @@ def fit_priors(*, seed, file, rmag_index, show=False):
 
     star_plt = plot_all(struct=struct, type='star', show=show)
     gal_plt = plot_all(struct=struct, type='gal', show=show)
+    star_scaled_plt = plot_all_scaled(struct=struct, type='star', show=show)
+    gal_scaled_plt = plot_all_scaled(struct=struct, type='gal', show=show)
+
     pdf.savefig(figure=star_plt)
+    pdf.savefig(figure=star_scaled_plt)
     pdf.savefig(figure=gal_plt)
+    pdf.savefig(figure=gal_scaled_plt)
     print('closing:', pdf_file)
     pdf.close()
 
