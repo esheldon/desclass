@@ -317,6 +317,23 @@ def gmix_print(gmix):
         print(s)
 
 
+def make_gauss(weight, mean, sigma):
+    """
+    make a gaussian mixture with n elements
+
+    Parameters
+    ----------
+    n: int
+        Number of gaussians in the mixture
+    """
+    gauss = np.zeros(1, dtype=GAUSS_DTYPE)
+    gauss_set(
+        gauss[0],
+        weight, mean, sigma,
+    )
+    return gauss
+
+
 def make_gmix(n):
     """
     make a gaussian mixture with n elements
@@ -496,9 +513,15 @@ def gmix_eval_array(gmix, x):
 
 
 @njit
+def gmix_get_weight(gmix):
+    return gmix['weight'].sum()
+
+
+@njit
 def gmix_get_mean(gmix):
     wsum = gmix['weight'].sum()
     return (gmix['weight']*gmix['mean']).sum()/wsum
+
 
 @njit
 def gmix_get_sigma(gmix):
