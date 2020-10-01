@@ -10,9 +10,9 @@ import matplotlib.pyplot as mplt
 
 matplotlib.use('PDF')
 rc = matplotlib.rcParams
-rc['text.usetex'] = True
-rc['mathtext.fontset'] = 'cm'
-rc['font.family'] = 'cmr10'
+# rc['text.usetex'] = True
+# rc['mathtext.fontset'] = 'cm'
+# rc['font.family'] = 'cmr10'
 rc['xtick.top'] = True
 rc['ytick.right'] = True
 rc['xtick.minor.visible'] = True
@@ -27,7 +27,7 @@ rc['ytick.minor.size'] = 4
 rc['xtick.direction'] = 'in'
 rc['ytick.direction'] = 'in'
 
-rc['axes.formatter.use_mathtext'] = True
+# rc['axes.formatter.use_mathtext'] = True
 rc['axes.labelsize'] = 18
 rc['xtick.labelsize'] = 16
 rc['ytick.labelsize'] = 16
