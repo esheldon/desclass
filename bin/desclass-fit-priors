@@ -11,9 +11,6 @@ def get_args():
     parser.add_argument('--seed', type=int, required=True)
     parser.add_argument('--rmag-index', type=int, required=True)
     parser.add_argument('--show', action='store_true')
-
-    parser.add_argument('--hist', action='store_true')
-
     return parser.parse_args()
 
 
@@ -21,21 +18,12 @@ def main():
 
     args = get_args()
 
-    if args.hist:
-        desclass.fithist_priors.fit_priors(
-            seed=args.seed,
-            file=args.file,
-            rmag_index=args.rmag_index,
-            show=args.show,
-        )
-
-    else:
-        desclass.priors.fit_priors(
-            seed=args.seed,
-            file=args.file,
-            rmag_index=args.rmag_index,
-            show=args.show,
-        )
+    desclass.priors.fit_priors(
+        seed=args.seed,
+        file=args.file,
+        rmag_index=args.rmag_index,
+        show=args.show,
+    )
 
 
 if __name__ == '__main__':

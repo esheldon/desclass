@@ -14,11 +14,11 @@ from . import priors
 from . import psf_flux
 from . import staramp
 from . import galamp
-from . import fithist
-from . import fithist_priors
 from . import util
 
 from . import cem
+from . import star_em
 from . import fit_conc_pdf
 from . import interp
 from . import prob
+from . import purity

@@ -31,7 +31,7 @@ def calculate_prob(data, rmag, conc):
         ystd = (smooth_data_hann3(means) - means).std()
         means_interp, _ = interp_gp(centers, means, ystd, rmag)
 
-        if igauss < 2:
+        if igauss < 3:
             ysend = sigmas
         else:
             ysend = smooth_data_hann3(sigmas)
@@ -39,7 +39,7 @@ def calculate_prob(data, rmag, conc):
         ystd = (smooth_data_hann3(sigmas) - sigmas).std()
         sigmas_interp, _ = interp_gp(centers, ysend, ystd, rmag)
 
-        if igauss < 2:
+        if igauss < 3:
             sum_interpolated_gauss(
                 nums_interp, means_interp, sigmas_interp, conc, star_sums,
                 gauss,
@@ -73,3 +73,24 @@ def sum_interpolated_gauss(nums, means, sigmas, conc, vals, gauss):
             sigmas[i],
         )
         vals[i] += gauss_eval_scalar(gauss, conc[i])
+
+
+def plothist_prob(prob, type, label, show=False):
+    import hickory
+    tab = hickory.Table(
+        nrows=2,
+    )
+
+    bins = 100
+    tab[0].hist(prob, bins=bins)
+    tab[0].set_title(label)
+
+    tab[1].hist(prob, bins=bins)
+    tab[1].set_yscale('log')
+    tab[1].set_ylim(bottom=0.5)
+    tab[1].set_xlabel(type+' probability')
+
+    if show:
+        tab.show()
+
+    return tab
