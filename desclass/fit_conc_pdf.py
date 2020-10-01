@@ -1,3 +1,8 @@
+"""
+TODO
+    - make purity plots automaticall?
+    - script to write out probabilities?  Do automatically in this code?
+"""
 import numpy as np
 from esutil.numpy_util import between
 from . import staramp
@@ -369,6 +374,8 @@ def fit_conc_pdf(
 
         nstar_predicted = init_nstar[i]
         ngal_predicted = w.size - nstar_predicted
+        if ngal_predicted < 3:
+            ngal_predicted = 3
 
         star_weight = nstar_predicted/w.size
         gal_weight = ngal_predicted/w.size

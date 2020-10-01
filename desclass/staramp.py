@@ -34,7 +34,7 @@ def predict(*, rmag, amp, amp_err=None):
         return num
 
 
-def calculate_amp(*, rmag, conc):
+def calculate_amp(*, rmag, num):
     """
     calculate the amplitude assuming a relationship of
         num = amp * (rmag - MAGOFF)**SLOPE
@@ -44,8 +44,8 @@ def calculate_amp(*, rmag, conc):
     ----------
     rmag: array
         rmag in bins
-    conc: array
-        concentration in bins
+    num: array
+        number in bins
 
     Returns
     -------
@@ -53,8 +53,8 @@ def calculate_amp(*, rmag, conc):
         Amplitude and uncertainty
     """
     pv = predict(rmag=rmag, amp=1.0)
-    amp = (conc/pv).mean()
-    amp_err = (conc/pv).std()
+    amp = (num/pv).mean()
+    amp_err = (num/pv).std()
     return amp, amp_err
 
 
@@ -94,7 +94,7 @@ def get_amp(*, rmag, conc, show=False, output=None, get_plot=False):
     )
     herr = np.sqrt(hd['hist'])
 
-    amp, amp_err = calculate_amp(rmag=hd['center'], conc=hd['hist'])
+    amp, amp_err = calculate_amp(rmag=hd['center'], num=hd['hist'])
 
     print('amp: %g +/- %g' % (amp, amp_err))
 

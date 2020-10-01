@@ -22,7 +22,9 @@ def main():
 
     args = get_args()
 
-    data = eu.io.read(args.flist)
+    flist = args.flist
+    flist.sort()
+    data = eu.io.read(flist)
 
     desclass.fit_conc_pdf.fit_conc_pdf(
         data=data,
