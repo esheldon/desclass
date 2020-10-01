@@ -574,7 +574,7 @@ def replace_ext(fname, old_ext, new_ext):
     return new_fname
 
 
-def plot_purity(data, type, rng):
+def plot_purity(data, type):
     """
     plot the cumulative contamination, e.g.
 
