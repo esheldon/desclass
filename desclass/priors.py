@@ -324,7 +324,7 @@ def plot_all_scaled(*, struct, type, show=False, output=None):
         label = 'galaxies'
 
     tab = hickory.Table(
-        figsize=(11, 11*0.618),
+        # figsize=(11, 11*0.618),
         nrows=2,
         ncols=2,
     )
@@ -417,12 +417,10 @@ def plot_all(*, struct, type, show=False, output=None):
         label = 'galaxies'
 
     tab = hickory.Table(
-        figsize=(11, 11*0.618),
+        # figsize=(11, 11*0.618),
         nrows=2,
         ncols=2,
     )
-
-    tab[1, 1].axis('off')
 
     tab[0, 0].set(
         xlabel='r mag',
@@ -437,15 +435,28 @@ def plot_all(*, struct, type, show=False, output=None):
         ylabel=r'$\sigma$',
     )
 
-    tab[1, 1].ntext(
-        0.5, 0.5, label,
-        horizontalalignment='center',
-        verticalalignment='center',
-        fontsize=16,
-    )
-
-    centers = struct['rmag_centers']
     ngauss = struct['%s_weights' % type].shape[1]
+    centers = struct['rmag_centers']
+    msize = 2
+
+    if type != 'star':
+        tab[1, 1].axis('off')
+        tab[1, 1].ntext(
+            0.5, 0.5, label,
+            horizontalalignment='center',
+            verticalalignment='center',
+            fontsize=16,
+        )
+    else:
+        wsums = struct['star_weights'].sum(axis=1)
+        msums = (struct['star_means']*struct['star_weights']).sum(axis=1)
+        omeans = msums/wsums
+        tab[1, 1].set(
+            xlabel='r mag',
+            ylabel='overall mean',
+            ylim=(-0.00015, 0.00025),
+        )
+        tab[1, 1].curve(centers, omeans, marker='o', markersize=msize)
 
     for igauss in range(ngauss):
 
@@ -456,7 +467,7 @@ def plot_all(*, struct, type, show=False, output=None):
         wmean = weights.mean()
         print(type, igauss, wmean)
         tab[0, 0].axhline(wmean, color='black')
-        tab[0, 0].curve(centers, weights, marker='o', markersize=2)
+        tab[0, 0].curve(centers, weights, marker='o', markersize=msize)
 
         if type == 'gal':
             poly = np.poly1d(np.polyfit(centers, means, 2))
@@ -499,7 +510,7 @@ def plot_all(*, struct, type, show=False, output=None):
             # tab[0, 1].set(ylim=[-0.0005, 0.0005])
             """
 
-        tab[0, 1].curve(centers, means, marker='o', markersize=1.5)
+        tab[0, 1].curve(centers, means, marker='o', markersize=msize)
 
         if type == 'star':
             from .fitting import fit_exp_pedestal, exp_func_pedestal
@@ -515,7 +526,15 @@ def plot_all(*, struct, type, show=False, output=None):
 
             from . import interp
             sigmas = interp.smooth_data_hann3(sigmas.astype('f8'))
-            res = fit_exp_pedestal(centers, sigmas, guess)
+            res = fit_exp_pedestal(
+                centers, sigmas, guess,
+                bounds=[
+                    (1.0e-10, 0.1),
+                    (5, 25),
+                    (0.1, 3),
+                    (1.0e-7, 0.001),
+                ]
+            )
 
             # assert res['flags'] == 0
             print('star', igauss, 'sigma flags:', res['flags'])
@@ -542,7 +561,7 @@ def plot_all(*, struct, type, show=False, output=None):
             # tab[1, 0].set(ylim=[0, 0.003])
             tab[1, 0].set_yscale('log')
 
-        tab[1, 0].curve(centers, sigmas, marker='o', markersize=1.5)
+        tab[1, 0].curve(centers, sigmas, marker='o', markersize=msize)
 
     if show:
         tab.show()
