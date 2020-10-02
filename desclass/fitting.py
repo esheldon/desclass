@@ -113,7 +113,7 @@ def exp_func_pedestal(pars, x):
     return amp * (np.exp(arg) - 1) + pedestal
 
 
-def fit_exp_pedestal(x, y, guess):
+def fit_exp_pedestal(x, y, guess, bounds=None):
     def loss(pars):
         model = exp_func_pedestal(pars, x)
         return (model - y)
@@ -125,10 +125,5 @@ def fit_exp_pedestal(x, y, guess):
         maxfev=4000,
         xtol=1.0e-5,
         ftol=1.0e-5,
-        bounds=[
-            (1.0e-10, 0.1),
-            (5, 25),
-            (0.1, 3),
-            (1.0e-7, 0.001),
-        ]
+        bounds=bounds,
     )
