@@ -31,6 +31,8 @@ class StarEMFitter(object):
 
         self.star_constraints = star_constraints
         self.gal_constraints = gal_constraints
+        if self.star_constraints is None:
+            raise ValueError('send star constraints')
 
         self.gal_ngauss = len(gal_constraints)
 
@@ -67,62 +69,49 @@ class StarEMFitter(object):
 
     def make_guess(self):
         sc = self.star_constraints
-        gc1 = self.gal_constraints[0]
-        gc2 = self.gal_constraints[1]
 
-        star_weight = guess_from_constraint(
+        glist = []
+
+        weight = guess_from_constraint(
             rng=self.rng,
             low=sc['weight_low'],
             high=sc['weight_high'],
         )
-        star_mean = guess_from_constraint(
+        mean = guess_from_constraint(
             rng=self.rng,
             low=sc['mean_low'],
             high=sc['mean_high'],
         )
-        star_sigma = guess_from_constraint(
+        sigma = guess_from_constraint(
             rng=self.rng,
             low=sc['sigma_low'],
             high=sc['sigma_high'],
         )
+        tguess = make_star_gmix(weight, mean, sigma)
+        glist.append(tguess)
 
-        gal1_weight = guess_from_constraint(
-            rng=self.rng,
-            low=gc1['weight_low'],
-            high=gc1['weight_high'],
-        )
-        gal1_mean = guess_from_constraint(
-            rng=self.rng,
-            low=gc1['mean_low'],
-            high=gc1['mean_high'],
-        )
-        gal1_sigma = guess_from_constraint(
-            rng=self.rng,
-            low=gc1['sigma_low'],
-            high=gc1['sigma_high'],
-        )
+        if self.gal_constraints is not None:
+            for gc in self.gal_constraints:
 
-        gal2_weight = guess_from_constraint(
-            rng=self.rng,
-            low=gc2['weight_low'],
-            high=gc2['weight_high'],
-        )
-        gal2_mean = guess_from_constraint(
-            rng=self.rng,
-            low=gc2['mean_low'],
-            high=gc2['mean_high'],
-        )
-        gal2_sigma = guess_from_constraint(
-            rng=self.rng,
-            low=gc2['sigma_low'],
-            high=gc2['sigma_high'],
-        )
+                weight = guess_from_constraint(
+                    rng=self.rng,
+                    low=gc['weight_low'],
+                    high=gc['weight_high'],
+                )
+                mean = guess_from_constraint(
+                    rng=self.rng,
+                    low=gc['mean_low'],
+                    high=gc['mean_high'],
+                )
+                sigma = guess_from_constraint(
+                    rng=self.rng,
+                    low=gc['sigma_low'],
+                    high=gc['sigma_high'],
+                )
+                tguess = make_gauss(weight, mean, sigma)
+                glist.append(tguess)
 
-        star_gmix = make_star_gmix(star_weight, star_mean, star_sigma)
-        gal1 = make_gauss(gal1_weight, gal1_mean, gal1_sigma)
-        gal2 = make_gauss(gal2_weight, gal2_mean, gal2_sigma)
-
-        return np.hstack([star_gmix, gal1, gal2])
+        return np.hstack(glist)
 
     def plot(
         self, *,
@@ -524,9 +513,11 @@ def run_sg_em(
 
     if star_constraints is None:
         star_constraints = make_constraints()
+
     if gal_constraints is None:
         ngal_gauss = ngauss - 3
-        gal_constraints = make_constraints(size=ngal_gauss)
+        if ngal_gauss > 0:
+            gal_constraints = make_constraints(size=ngal_gauss)
 
     converged = False
 
