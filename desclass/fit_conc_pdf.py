@@ -1,7 +1,8 @@
 """
 TODO
-    - make purity plots automaticall?
-    - script to write out probabilities?  Do automatically in this code?
+    - make purity plots automatically?
+    - write out new file with probabilities?  Depends on interpolation so might
+      want to do in separate run of a script
 """
 import numpy as np
 from esutil.numpy_util import between
@@ -14,6 +15,7 @@ from desclass.cem import (
 )
 
 from . import star_em
+# from . import bf
 from .star_em import make_constraints
 from .interp import smooth_data_hann3, interp_gp
 from .fitting import exp_func_pedestal
@@ -28,16 +30,30 @@ def star_sigma_vs_rmag(*, rmag):
     return exp_func_pedestal(STAR_SIGMA_PARS, rmag,)
 
 
+def star_mean_vs_rmag(*, rmag):
+    # return bf.predict(rmag=rmag, amp=-1.25e-06)
+    ply = np.poly1d([-1.93076955e-05,  3.64168874e-04])
+    return ply(rmag)
+
+
 def get_star_constraints(*, weight, rmag):
 
     ww = 0.01
+    # ww = 0.10
     sw = 0.5
+    # mw = 1.0e-5
+    mw = 1.0e-6
+    mean = star_mean_vs_rmag(rmag=rmag)
     sigma = star_sigma_vs_rmag(rmag=rmag)
     constraints = make_constraints(
         weight_low=(1-ww/2)*weight,
         weight_high=(1+ww/2)*weight,
-        mean_low=-7.5e-5,
-        mean_high=0.0,
+        # mean_low=-7.5e-5,
+        # mean_low=-1.0e-4,
+        # mean_high=5.0e-5,
+        # mean_high=0.0,
+        mean_low=mean-mw,
+        mean_high=mean+mw,
         sigma_low=(1-sw/2)*sigma,
         sigma_high=(1+sw/2)*sigma,
     )
@@ -156,29 +172,29 @@ def plot_star_fits_vs_rmag(data, dofits=False, show=False):
         ncols=2,
     )
 
-    xlim = (15, 25)
+    xlim = (15.5, 25.5)
     tab.suptitle('stars', fontsize=15)
     tab[0, 0].set(
         xlabel='r mag',
         ylabel='weight',
-        xlim=xlim
+        xlim=xlim,
     )
     tab[0, 1].set(
         xlabel='r mag',
-        ylabel='relweight',
-        xlim=xlim,
-    )
-    tab[1, 0].set(
-        xlabel='r mag',
         ylabel='mean',
         xlim=xlim,
+        ylim=(-0.00012, 0.00008),
     )
-
-    tab[1, 1].set(
+    tab[1, 0].set(
         xlabel='r mag',
         ylabel=r'$\sigma$',
         xlim=xlim,
     )
+    tab[1, 1].axis('off')
+    tab[1, 1].ntext(0.5, 0.5, 'stars',
+                    horizontalalignment='center',
+                    verticalalignment='center',
+                    fontsize=16)
 
     centers = data['rmag']
     star_gmix = data['gmix'][:, :3]
@@ -190,9 +206,10 @@ def plot_star_fits_vs_rmag(data, dofits=False, show=False):
     tab[0, 0].plot(centers, weights, marker='o', markersize=2)
     # tab[0, 1].plot(centers, relweights, marker='o', markersize=2)
 
-    tab[1, 0].plot(centers, means, marker='o', markersize=2)
-    tab[1, 1].plot(centers, sigmas, marker='o', markersize=2)
+    tab[0, 1].plot(centers, means, marker='o', markersize=2)
+    tab[1, 0].plot(centers, sigmas, marker='o', markersize=2)
 
+    # interpolation
     xinterp = np.linspace(centers[0], centers[-1], 1000)
 
     ystd = (smooth_data_hann3(weights) - weights).std()
@@ -201,13 +218,13 @@ def plot_star_fits_vs_rmag(data, dofits=False, show=False):
 
     ystd = (smooth_data_hann3(means) - means).std()
     yinterp, ysigma = interp_gp(centers, means, ystd, xinterp)
-    tab[1, 0].curve(xinterp, yinterp, linestyle='solid')
+    tab[0, 1].curve(xinterp, yinterp, linestyle='solid')
 
     ystd = (smooth_data_hann3(sigmas) - sigmas).std()
     ysend = smooth_data_hann3(sigmas)
 
     yinterp, ysigma = interp_gp(centers, ysend, ystd, xinterp)
-    tab[1, 1].curve(xinterp, yinterp, linestyle='solid')
+    tab[1, 0].curve(xinterp, yinterp, linestyle='solid')
 
     if show:
         tab.show()
@@ -227,34 +244,39 @@ def plot_gal_fits_vs_rmag(data, dofits=False, show=False):
         ncols=2,
     )
 
-    xlim = (15, 25)
+    xlim = (15.5, 25.5)
     tab.suptitle('galaxies', fontsize=15)
     tab[0, 0].set(
         xlabel='r mag',
         ylabel='weight',
         xlim=xlim
     )
+    # tab[0, 1].set(
+    #     xlabel='r mag',
+    #     ylabel='relweight',
+    #     xlim=xlim,
+    # )
     tab[0, 1].set(
-        xlabel='r mag',
-        ylabel='relweight',
-        xlim=xlim,
-    )
-    tab[1, 0].set(
         xlabel='r mag',
         ylabel='mean',
         xlim=xlim,
     )
 
-    tab[1, 1].set(
+    tab[1, 0].set(
         xlabel='r mag',
         ylabel=r'$\sigma$',
         xlim=xlim,
     )
+    tab[1, 1].axis('off')
+    tab[1, 1].ntext(0.5, 0.5, 'galaxies',
+                    horizontalalignment='center',
+                    verticalalignment='center',
+                    fontsize=16)
 
     centers = data['rmag']
     gmixes = data['gmix'][:, 3:]
 
-    wsums = gmixes['weight'].sum(axis=1)
+    # wsums = gmixes['weight'].sum(axis=1)
 
     ngauss = gmixes['weight'].shape[1]
 
@@ -266,16 +288,17 @@ def plot_gal_fits_vs_rmag(data, dofits=False, show=False):
         means = gmixes['mean'][:, igauss]
         sigmas = gmixes['sigma'][:, igauss]
 
-        relweights = weights/wsums
+        # relweights = weights/wsums
 
         tab[0, 0].plot(centers, weights, marker='o', markersize=2,
                        color=color)
-        tab[0, 1].plot(centers, relweights, marker='o', markersize=2,
-                       color=color)
+        # tab[0, 1].plot(centers, relweights, marker='o', markersize=2,
+        #                color=color)
 
-        tab[1, 0].plot(centers, means, marker='o', markersize=2, color=color)
-        tab[1, 1].plot(centers, sigmas, marker='o', markersize=2, color=color)
+        tab[0, 1].plot(centers, means, marker='o', markersize=2, color=color)
+        tab[1, 0].plot(centers, sigmas, marker='o', markersize=2, color=color)
 
+        # interpolation
         xinterp = np.linspace(centers[0], centers[-1], 1000)
 
         ystd = (smooth_data_hann3(weights) - weights).std()
@@ -285,14 +308,14 @@ def plot_gal_fits_vs_rmag(data, dofits=False, show=False):
 
         ystd = (smooth_data_hann3(means) - means).std()
         yinterp, ysigma = interp_gp(centers, means, ystd, xinterp)
-        tab[1, 0].curve(xinterp, yinterp, linestyle='solid',
+        tab[0, 1].curve(xinterp, yinterp, linestyle='solid',
                         color=color)
 
         ystd = (smooth_data_hann3(sigmas) - sigmas).std()
         ysend = smooth_data_hann3(sigmas)
 
         yinterp, ysigma = interp_gp(centers, ysend, ystd, xinterp)
-        tab[1, 1].curve(xinterp, yinterp, linestyle='solid',
+        tab[1, 0].curve(xinterp, yinterp, linestyle='solid',
                         color=color)
 
     if show:
@@ -397,7 +420,6 @@ def fit_conc_pdf(
         assert res['flags'] == 0, 'failed to converge'
 
         plt = fitter.plot3(label=label, show=show)
-
         pdf.savefig(figure=plt)
 
         outdata['rmagmin'][i] = rmagmin
