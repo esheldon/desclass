@@ -19,6 +19,7 @@ from . import star_em
 from .star_em import make_constraints
 from .interp import smooth_data_hann3, interp_gp
 from .fitting import exp_func_pedestal
+from .prob import interpolate_star_gmix, interpolate_gauss
 
 from matplotlib.backends.backend_pdf import PdfPages
 
@@ -160,7 +161,7 @@ def make_output(num):
     return np.zeros(num, dtype=dt)
 
 
-def plot_star_fits_vs_rmag(data, dofits=False, show=False):
+def plot_star_fits_vs_rmag(data, rng, show=False):
     """
     make a plot of gaussian mixture parameters vs the central
     magnitude of the bin
@@ -197,11 +198,11 @@ def plot_star_fits_vs_rmag(data, dofits=False, show=False):
                     fontsize=16)
 
     centers = data['rmag']
-    star_gmix = data['gmix'][:, :3]
+    star_gmixes = data['gmix'][:, :3]
 
-    weights = np.array([gmix_get_weight(gm) for gm in star_gmix])
-    means = np.array([gmix_get_mean(gm) for gm in star_gmix])
-    sigmas = np.array([gmix_get_sigma(gm) for gm in star_gmix])
+    weights = np.array([gmix_get_weight(gm) for gm in star_gmixes])
+    means = np.array([gmix_get_mean(gm) for gm in star_gmixes])
+    sigmas = np.array([gmix_get_sigma(gm) for gm in star_gmixes])
 
     tab[0, 0].plot(centers, weights, marker='o', markersize=2)
     # tab[0, 1].plot(centers, relweights, marker='o', markersize=2)
@@ -212,19 +213,12 @@ def plot_star_fits_vs_rmag(data, dofits=False, show=False):
     # interpolation
     xinterp = np.linspace(centers[0], centers[-1], 1000)
 
-    ystd = (smooth_data_hann3(weights) - weights).std()
-    yinterp, ysigma = interp_gp(centers, weights, ystd, xinterp)
-    tab[0, 0].curve(xinterp, yinterp, linestyle='solid')
-
-    ystd = (smooth_data_hann3(means) - means).std()
-    yinterp, ysigma = interp_gp(centers, means, ystd, xinterp)
-    tab[0, 1].curve(xinterp, yinterp, linestyle='solid')
-
-    ystd = (smooth_data_hann3(sigmas) - sigmas).std()
-    ysend = smooth_data_hann3(sigmas)
-
-    yinterp, ysigma = interp_gp(centers, ysend, ystd, xinterp)
-    tab[1, 0].curve(xinterp, yinterp, linestyle='solid')
+    weight_interp, mean_interp, sigma_interp = interpolate_star_gmix(
+        rmag_centers=centers, star_gmixes=star_gmixes, rmag=xinterp, rng=rng,
+    )
+    tab[0, 0].curve(xinterp, weight_interp, linestyle='solid')
+    tab[0, 1].curve(xinterp, mean_interp, linestyle='solid')
+    tab[1, 0].curve(xinterp, sigma_interp, linestyle='solid')
 
     if show:
         tab.show()
@@ -232,7 +226,7 @@ def plot_star_fits_vs_rmag(data, dofits=False, show=False):
     return tab
 
 
-def plot_gal_fits_vs_rmag(data, dofits=False, show=False):
+def plot_gal_fits_vs_rmag(data, rng, show=False):
     """
     make a plot of gaussian mixture parameters vs the central
     magnitude of the bin
@@ -301,20 +295,34 @@ def plot_gal_fits_vs_rmag(data, dofits=False, show=False):
         # interpolation
         xinterp = np.linspace(centers[0], centers[-1], 1000)
 
+        weight_interp, mean_interp, sigma_interp = interpolate_gauss(
+            rmag_centers=centers,
+            gmixes=gmixes,
+            igauss=igauss,
+            rmag=xinterp,
+            rng=rng,
+        )
+
         ystd = (smooth_data_hann3(weights) - weights).std()
-        yinterp, ysigma = interp_gp(centers, weights, ystd, xinterp)
+        yinterp, ysigma, weight_gp = interp_gp(
+            centers, weights, ystd, xinterp, rng=rng,
+        )
         tab[0, 0].curve(xinterp, yinterp, linestyle='solid',
                         color=color)
 
         ystd = (smooth_data_hann3(means) - means).std()
-        yinterp, ysigma = interp_gp(centers, means, ystd, xinterp)
+        yinterp, ysigma, mean_gp = interp_gp(
+            centers, means, ystd, xinterp, rng=rng,
+        )
         tab[0, 1].curve(xinterp, yinterp, linestyle='solid',
                         color=color)
 
         ystd = (smooth_data_hann3(sigmas) - sigmas).std()
         ysend = smooth_data_hann3(sigmas)
 
-        yinterp, ysigma = interp_gp(centers, ysend, ystd, xinterp)
+        yinterp, ysigma, sigma_gp = interp_gp(
+            centers, ysend, ystd, xinterp, rng=rng,
+        )
         tab[1, 0].curve(xinterp, yinterp, linestyle='solid',
                         color=color)
 
@@ -427,9 +435,9 @@ def fit_conc_pdf(
         outdata['rmag'][i] = rmag
         outdata['gmix'][i] = fitter.gmix
 
-    plt = plot_star_fits_vs_rmag(outdata, show=show)
+    plt = plot_star_fits_vs_rmag(outdata, rng, show=show)
     pdf.savefig(plt)
-    plt = plot_gal_fits_vs_rmag(outdata, show=show)
+    plt = plot_gal_fits_vs_rmag(outdata, rng, show=show)
     pdf.savefig(plt)
 
     print('closing pdf file:', pdf_file)

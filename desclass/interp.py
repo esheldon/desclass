@@ -26,7 +26,7 @@ def smooth_data_hann3(y):
     return sy
 
 
-def fit_gp(x, y, yerr):
+def fit_gp(x, y, yerr, rng=None):
     from sklearn import gaussian_process
     from sklearn.gaussian_process.kernels import (
         Matern, WhiteKernel,
@@ -45,6 +45,7 @@ def fit_gp(x, y, yerr):
 
     gp = gaussian_process.GaussianProcessRegressor(
         kernel=kernel, normalize_y=True,
+        random_state=rng,
     )
 
     X = x.reshape(-1, 1)
@@ -53,13 +54,13 @@ def fit_gp(x, y, yerr):
     return gp
 
 
-def interp_gp(x, y, yerr, xinterp):
+def interp_gp(x, y, yerr, xinterp, rng=None):
 
-    gp = fit_gp(x, y, yerr)
+    gp = fit_gp(x, y, yerr, rng=rng)
 
     y_pred, sigma = gp.predict(
         xinterp.reshape(-1, 1),
         return_std=True,
     )
 
-    return y_pred, sigma
+    return y_pred, sigma, gp
