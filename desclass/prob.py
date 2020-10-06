@@ -3,13 +3,8 @@ from numba import njit
 from .star_em import make_star_gmix, star_gmix_set
 from . import cem
 from .cem import gauss_set, gauss_eval_scalar
-from .interp import smooth_data_hann3, interp_gp
-from desclass.cem import (
-    gmix_get_weight,
-    gmix_get_mean,
-    gmix_get_sigma,
-    gmix_eval_scalar,
-)
+from desclass.cem import gmix_eval_scalar
+from .interp import interpolate_star_gmix, interpolate_gauss
 
 
 def calculate_prob(pdf_data, rmag, conc, rng):
@@ -31,7 +26,7 @@ def calculate_prob(pdf_data, rmag, conc, rng):
     Returns
     --------
     prob_gal, prob_star: arrays
-        Arrays withe same size as rmag/conc
+        Arrays with same size as rmag/conc
     """
     rmag = np.array(rmag, dtype='f8', copy=False)
     conc = np.array(conc, dtype='f8', copy=False)
@@ -194,100 +189,3 @@ def plothist_prob(prob, type, label, show=False):
         tab.show()
 
     return tab
-
-
-def interpolate_star_gmix(*, rmag_centers, star_gmixes, rmag, rng):
-    """
-    interpolate the star gmixes fit in bins of rmag
-
-    Parameters
-    ----------
-    rmag_centers: array
-        Centers of the rmag bins
-    star_gmixes: gmix array
-        e.g. pdf_data['gmix'][:, :3]
-    rmag: array
-        rmag positions at which to interpolate
-    rng: np.RandomState
-        Random state used by GaussianProcessRegressor
-
-    Returns
-    -------
-    weight_interp, mean_interp, sigma_interp
-        arrays with same size as rmag
-    """
-    # centers = data['rmag']
-    # star_gmixes = data['gmix'][:, :3]
-
-    weights = np.array([gmix_get_weight(gm) for gm in star_gmixes])
-    means = np.array([gmix_get_mean(gm) for gm in star_gmixes])
-    sigmas = np.array([gmix_get_sigma(gm) for gm in star_gmixes])
-
-    ystd = (smooth_data_hann3(weights) - weights).std()
-    weight_interp, ysigma, weight_gp = interp_gp(
-        rmag_centers, weights, ystd, rmag, rng=rng,
-    )
-
-    ystd = (smooth_data_hann3(means) - means).std()
-    mean_interp, ysigma, means_gp = interp_gp(
-        rmag_centers, means, ystd, rmag, rng=rng,
-    )
-
-    ystd = (smooth_data_hann3(sigmas) - sigmas).std()
-    ysend = smooth_data_hann3(sigmas)
-
-    sigma_interp, ysigma, sigma_gp = interp_gp(
-        rmag_centers, ysend, ystd, rmag, rng=rng,
-    )
-
-    return weight_interp, mean_interp, sigma_interp
-
-
-def interpolate_gauss(*, rmag_centers, gmixes, igauss, rmag, rng):
-    """
-    interpolate a single gaussian from pdf fits in bins of rmag
-
-    Parameters
-    ----------
-    rmag_centers: array
-        Centers of the rmag bins
-    star_gmixes: gmix array
-        e.g. pdf_data['gmix']
-    igauss: int
-        the gaussian in the mixture to interpolate
-    rmag: array
-        rmag positions at which to interpolate
-    rng: np.RandomState
-        Random state used by GaussianProcessRegressor
-
-    Returns
-    -------
-    weight_interp, mean_interp, sigma_interp
-        arrays with same size as rmag
-    """
-
-    # centers = data['rmag']
-    # star_gmixes = data['gmix'][:, :3]
-
-    weights = gmixes['weight'][:, igauss]
-    means = gmixes['mean'][:, igauss]
-    sigmas = gmixes['sigma'][:, igauss]
-
-    ystd = (smooth_data_hann3(weights) - weights).std()
-    weight_interp, ysigma, weight_gp = interp_gp(
-        rmag_centers, weights, ystd, rmag, rng=rng,
-    )
-
-    ystd = (smooth_data_hann3(means) - means).std()
-    mean_interp, ysigma, means_gp = interp_gp(
-        rmag_centers, means, ystd, rmag, rng=rng,
-    )
-
-    ystd = (smooth_data_hann3(sigmas) - sigmas).std()
-    ysend = smooth_data_hann3(sigmas)
-
-    sigma_interp, ysigma, sigma_gp = interp_gp(
-        rmag_centers, ysend, ystd, rmag, rng=rng,
-    )
-
-    return weight_interp, mean_interp, sigma_interp

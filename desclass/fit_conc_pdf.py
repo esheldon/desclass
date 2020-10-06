@@ -1,6 +1,7 @@
 """
 TODO
     - make purity plots automatically?
+        - Store those curves for interpolating to a specified purity
     - write out new file with probabilities?  Depends on interpolation so might
       want to do in separate run of a script
 """
@@ -17,9 +18,9 @@ from desclass.cem import (
 from . import star_em
 # from . import bf
 from .star_em import make_constraints
-from .interp import smooth_data_hann3, interp_gp
 from .fitting import exp_func_pedestal
-from .prob import interpolate_star_gmix, interpolate_gauss
+from .interp import interpolate_star_gmix, interpolate_gauss
+from .purity import plot_purity
 
 from matplotlib.backends.backend_pdf import PdfPages
 
@@ -205,7 +206,6 @@ def plot_star_fits_vs_rmag(data, rng, show=False):
     sigmas = np.array([gmix_get_sigma(gm) for gm in star_gmixes])
 
     tab[0, 0].plot(centers, weights, marker='o', markersize=2)
-    # tab[0, 1].plot(centers, relweights, marker='o', markersize=2)
 
     tab[0, 1].plot(centers, means, marker='o', markersize=2)
     tab[1, 0].plot(centers, sigmas, marker='o', markersize=2)
@@ -245,11 +245,6 @@ def plot_gal_fits_vs_rmag(data, rng, show=False):
         ylabel='weight',
         xlim=xlim
     )
-    # tab[0, 1].set(
-    #     xlabel='r mag',
-    #     ylabel='relweight',
-    #     xlim=xlim,
-    # )
     tab[0, 1].set(
         xlabel='r mag',
         ylabel='mean',
@@ -270,8 +265,6 @@ def plot_gal_fits_vs_rmag(data, rng, show=False):
     centers = data['rmag']
     gmixes = data['gmix'][:, 3:]
 
-    # wsums = gmixes['weight'].sum(axis=1)
-
     ngauss = gmixes['weight'].shape[1]
 
     colors = ['#1f77b4', '#ff7f0e']
@@ -282,12 +275,8 @@ def plot_gal_fits_vs_rmag(data, rng, show=False):
         means = gmixes['mean'][:, igauss]
         sigmas = gmixes['sigma'][:, igauss]
 
-        # relweights = weights/wsums
-
         tab[0, 0].plot(centers, weights, marker='o', markersize=2,
                        color=color)
-        # tab[0, 1].plot(centers, relweights, marker='o', markersize=2,
-        #                color=color)
 
         tab[0, 1].plot(centers, means, marker='o', markersize=2, color=color)
         tab[1, 0].plot(centers, sigmas, marker='o', markersize=2, color=color)
@@ -303,28 +292,9 @@ def plot_gal_fits_vs_rmag(data, rng, show=False):
             rng=rng,
         )
 
-        ystd = (smooth_data_hann3(weights) - weights).std()
-        yinterp, ysigma, weight_gp = interp_gp(
-            centers, weights, ystd, xinterp, rng=rng,
-        )
-        tab[0, 0].curve(xinterp, yinterp, linestyle='solid',
-                        color=color)
-
-        ystd = (smooth_data_hann3(means) - means).std()
-        yinterp, ysigma, mean_gp = interp_gp(
-            centers, means, ystd, xinterp, rng=rng,
-        )
-        tab[0, 1].curve(xinterp, yinterp, linestyle='solid',
-                        color=color)
-
-        ystd = (smooth_data_hann3(sigmas) - sigmas).std()
-        ysend = smooth_data_hann3(sigmas)
-
-        yinterp, ysigma, sigma_gp = interp_gp(
-            centers, ysend, ystd, xinterp, rng=rng,
-        )
-        tab[1, 0].curve(xinterp, yinterp, linestyle='solid',
-                        color=color)
+        tab[0, 0].curve(xinterp, weight_interp, linestyle='solid', color=color)
+        tab[0, 1].curve(xinterp, mean_interp, linestyle='solid', color=color)
+        tab[1, 0].curve(xinterp, sigma_interp, linestyle='solid', color=color)
 
     if show:
         tab.show()
@@ -434,6 +404,11 @@ def fit_conc_pdf(
         outdata['rmagmax'][i] = rmagmax
         outdata['rmag'][i] = rmag
         outdata['gmix'][i] = fitter.gmix
+
+    plt = plot_purity(pdf_data=outdata, type='star')
+    pdf.savefig(plt)
+    plt = plot_purity(pdf_data=outdata, type='gal')
+    pdf.savefig(plt)
 
     plt = plot_star_fits_vs_rmag(outdata, rng, show=show)
     pdf.savefig(plt)

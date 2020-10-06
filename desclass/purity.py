@@ -1,12 +1,14 @@
 import numpy as np
 
 
-def plot_purity(data, type):
+def plot_purity(*, pdf_data, type, show=False):
     """
     plot the cumulative contamination, e.g.
 
     intergral(nstar)/(integral(nstar) + integral(ngal))
     intergral(ngal)/(integral(nstar) + integral(ngal))
+
+    for the binned pdf data
     """
     import scipy.stats
     import hickory
@@ -16,29 +18,28 @@ def plot_purity(data, type):
         nrows=4, ncols=4,
     )
 
-    gmixes = data['gmix']
+    gmixes = pdf_data['gmix']
     ngauss = gmixes['mean'].shape[1]
     npts = 1000
 
-    for rmagbin in range(data.size):
+    if type == 'star':
+        minconc, maxconc = -0.01, 0.005
+    else:
+        minconc, maxconc = -0.001, 0.005
+
+    num = 1000
+    conc = np.linspace(minconc, maxconc, num)
+
+    for rmagbin in range(pdf_data.size):
 
         label = r'$%.2f < r < %.2f$' % (
-            data['rmagmin'][rmagbin],
-            data['rmagmax'][rmagbin],
+            pdf_data['rmagmin'][rmagbin],
+            pdf_data['rmagmax'][rmagbin],
         )
 
         all_cdf = np.zeros(npts)
         this_cdf = np.zeros(npts)
         purity = np.zeros(npts)
-
-        if type == 'star':
-            # minconc, maxconc = 0, 0.005
-            minconc, maxconc = -0.01, 0.005
-        else:
-            minconc, maxconc = -0.001, 0.005
-
-        num = 1000
-        conc = np.linspace(minconc, maxconc, num)
 
         for igauss in range(ngauss):
             mean = gmixes['mean'][rmagbin, igauss]
@@ -63,7 +64,6 @@ def plot_purity(data, type):
         purity[w] = this_cdf[w]/all_cdf[w]
 
         ylim = (
-            # 0.9*purity[w].min(),
             0.5*purity[w].max(),
             1.1,
         )
@@ -87,6 +87,7 @@ def plot_purity(data, type):
         ax.axhline(1, color='black')
         ax.curve(conc[w], purity[w])
 
-    tab.show()
+    if show:
+        tab.show()
 
     return tab
