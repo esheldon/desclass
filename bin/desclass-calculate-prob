@@ -1,0 +1,134 @@
+#!/usr/bin/env python
+
+import numpy as np
+import esutil as eu
+from esutil.numpy_util import between
+import fitsio
+import desclass
+from matplotlib.backends.backend_pdf import PdfPages
+
+
+def get_args():
+    import argparse
+
+    parser = argparse.ArgumentParser()
+
+    parser.add_argument('--pdf-data', required=True)
+    parser.add_argument('--conc-data', required=True)
+    parser.add_argument('--rmag-index', type=int, required=True)
+    parser.add_argument('--seed', type=int, required=True)
+    parser.add_argument('--output', required=True)
+    parser.add_argument('--show', action='store_true')
+
+    return parser.parse_args()
+
+
+def doplot(*, pdf_data, conc_data, rmag_index, fname):
+    """
+    make histograms of the probabilities in the original rmag bins
+
+    Parameters
+    ----------
+    pdf_data: array
+        Array with the gmix pdf data
+    conc_data: array
+        Array with the mags and concentration measurements
+    rmag_index: int
+        Index for r-band magnitude
+    fname: string
+        File name to write plots
+
+    Returns
+    -------
+    None
+    """
+    w, = np.where(conc_data['flags'] == 0)
+
+    print('writing plots to:', fname)
+    pdf = PdfPages(fname)
+
+    for i in range(pdf_data.size):
+        rmagmin = pdf_data['rmagmin'][i]
+        rmagmax = pdf_data['rmagmax'][i]
+        print('%d/%d  %g < r < %g' % (i+1, pdf_data.size, rmagmin, rmagmax))
+
+        label = r'$%.2f < r < %.2f$' % (rmagmin, rmagmax)
+
+        w, = np.where(
+            (conc_data['flags'] == 0) &
+            between(conc_data['psf_mag'][:, rmag_index], rmagmin, rmagmax)
+        )
+
+        plt = desclass.prob.plothist_prob(
+            prob=conc_data['star_prob'][w],
+            type='star',
+            label=label,
+        )
+        pdf.savefig(figure=plt)
+
+        plt = desclass.prob.plothist_prob(
+            prob=conc_data['gal_prob'][w],
+            type='galaxy',
+            label=label,
+        )
+        pdf.savefig(figure=plt)
+
+    pdf.close()
+
+
+def main():
+
+    args = get_args()
+
+    pdf_data = np.load(args.pdf_data)
+    conc_data = fitsio.read(args.conc_data)
+
+    rng = np.random.RandomState(args.seed)
+    w, = np.where(conc_data['flags'] == 0)
+
+    print('calculating probabilities')
+    gal_prob, star_prob = desclass.prob.calculate_prob(
+        pdf_data=pdf_data,
+        rmag=conc_data['psf_mag'][w, args.rmag_index],
+        conc=conc_data['conc'][w],
+        rng=rng,
+    )
+
+    print('calculating purities')
+    gal_purity, star_purity = desclass.purity.calculate_purity(
+        pdf_data=pdf_data,
+        rmag=conc_data['psf_mag'][w, args.rmag_index],
+        conc=conc_data['conc'][w],
+        rng=rng,
+    )
+
+    add_dt = [
+        ('gal_prob', 'f8'),
+        ('gal_purity', 'f8'),
+        ('star_prob', 'f8'),
+        ('star_purity', 'f8'),
+    ]
+    outdata = eu.numpy_util.add_fields(conc_data, add_dt)
+    outdata['gal_prob'][w] = gal_prob
+    outdata['gal_purity'][w] = gal_purity
+    outdata['star_prob'][w] = star_prob
+    outdata['star_purity'][w] = star_purity
+
+    print('writing:', args.output)
+    fitsio.write(args.output, outdata, clobber=True)
+
+    plot_fname = desclass.util.replace_ext(
+        fname=args.output,
+        old_ext='.fits',
+        new_ext='-plots.pdf',
+    )
+    doplot(
+        pdf_data=pdf_data,
+        conc_data=outdata,
+        rmag_index=args.rmag_index,
+        fname=plot_fname,
+    )
+
+
+if __name__ == '__main__':
+    main()
