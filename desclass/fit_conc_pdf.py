@@ -21,6 +21,7 @@ from .star_em import make_constraints
 from .fitting import exp_func_pedestal
 from .interp import interpolate_star_gmix, interpolate_gauss
 from .purity import plot_purity
+from .util import replace_ext
 
 from matplotlib.backends.backend_pdf import PdfPages
 
@@ -134,12 +135,6 @@ def get_gal_constraints(*, weight, rmag):
             )]
     )
     return constraints
-
-
-def replace_ext(fname, old_ext, new_ext):
-    new_fname = fname.replace(old_ext, new_ext)
-    assert new_fname != fname
-    return new_fname
 
 
 def make_output(num):
@@ -311,7 +306,11 @@ def fit_conc_pdf(
     rng = np.random.RandomState(seed)
 
     print('will write to:', output)
-    pdf_file = replace_ext(output, '.npy', '-plots.pdf')
+    pdf_file = replace_ext(
+        fname=output,
+        old_ext='.npy',
+        new_ext='-plots.pdf',
+    )
     print('writing to pdf file:', pdf_file)
     pdf = PdfPages(pdf_file)
 
@@ -322,7 +321,6 @@ def fit_conc_pdf(
         (17.0, 17.5),
         (17.5, 18.0),
         (18.0, 18.5),
-
         (18.5, 19.0),
         (19, 19.5),
         (19.5, 20.0),

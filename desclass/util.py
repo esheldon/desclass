@@ -3,6 +3,40 @@ import ngmix
 from .constants import RADIUS, MAGZP
 
 
+def replace_ext(*, fname, old_ext, new_ext):
+    """
+    replace the extension in the filename, ensuring that the result is a new
+    string
+
+    Parameters
+    ----------
+    fname: string
+        File name
+    old_ext: string
+        Old string to replace
+    new_ext: string
+        New string for extension
+
+    Returns
+    -------
+    new_fname: string
+        Name with new extension
+    """
+
+    if old_ext == new_ext:
+        raise ValueError("new and old extensions are the same: '%s'" % old_ext)
+
+    el = len(old_ext)
+
+    if fname[-el:] != old_ext:
+        raise ValueError("extension '%s' not in filename" % old_ext)
+
+    new_fname = fname[:-el] + new_ext
+    assert new_fname != fname
+
+    return new_fname
+
+
 def rewrap_obslist(obslist_in):
     """
     rewrap an ObsList.  When the obs list is sliced, it is converted to a

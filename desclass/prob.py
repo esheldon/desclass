@@ -7,7 +7,7 @@ from desclass.cem import gmix_eval_scalar
 from .interp import interpolate_star_gmix, interpolate_gauss
 
 
-def calculate_prob(pdf_data, rmag, conc, rng):
+def calculate_prob(*, pdf_data, rmag, conc, rng):
     """
     calculate the probability that each object is a star or galaxy
 
@@ -25,7 +25,7 @@ def calculate_prob(pdf_data, rmag, conc, rng):
 
     Returns
     --------
-    prob_gal, prob_star: arrays
+    gal_prob, star_prob: arrays
         Arrays with same size as rmag/conc
     """
     rmag = np.array(rmag, dtype='f8', copy=False)
@@ -71,13 +71,13 @@ def calculate_prob(pdf_data, rmag, conc, rng):
     tot_sums = gal_sums + star_sums
 
     w, = np.where(tot_sums > 0)
-    prob_gal = np.zeros(rmag.size)
-    prob_star = np.zeros(rmag.size)
+    gal_prob = np.zeros(rmag.size)
+    star_prob = np.zeros(rmag.size)
 
-    prob_gal[w] = gal_sums[w]/tot_sums[w]
-    prob_star[w] = star_sums[w]/tot_sums[w]
+    gal_prob[w] = gal_sums[w]/tot_sums[w]
+    star_prob[w] = star_sums[w]/tot_sums[w]
 
-    return prob_gal, prob_star
+    return gal_prob, star_prob
 
 
 @njit
@@ -151,7 +151,7 @@ def sum_interpolated_gauss(weights, means, sigmas, conc, vals, gauss):
         vals[i] += gauss_eval_scalar(gauss, conc[i])
 
 
-def plothist_prob(prob, type, label, show=False):
+def plothist_prob(*, prob, type, label, show=False):
     """
     plot histogram of the probabilities, with a log and a linear
     plot

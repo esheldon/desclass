@@ -1,4 +1,88 @@
 import numpy as np
+from esutil.numpy_util import between
+from .interp import interpolate_gauss
+
+
+def calculate_purity(*, pdf_data, rmag, conc, rng):
+    """
+    Calculate the star and galaxy purity at the input mag and concentration
+    values
+
+    star_purity = intergral(nstar)/(integral(nstar) + integral(ngal)) from left
+    gal_purity intergral(ngal)/(integral(nstar) + integral(ngal)) from righ
+
+    Parameters
+    ----------
+    pdf_data: array with fields
+        PDF data for bins in r magnitude.  Should have fields 'gmix' and
+        'rmag', the bin centers
+    rmag: array
+        We will evaluate the pdf data at these rmag points
+    conc: array
+        We will evaluate the pdf data at these concentration points
+    rng: np.RandomState
+        Random state used by GaussianProcessRegressor
+
+
+    Returns
+    --------
+    purity_gal, purity_star: arrays
+        Arrays with same size as input rmag/conc
+    """
+    import scipy.stats
+
+    rmagmin = pdf_data['rmagmin'][0]
+    rmagmax = pdf_data['rmagmax'][-1]
+    print('limiting to:', rmagmin, rmagmax)
+
+    centers = pdf_data['rmag']
+    gmixes = pdf_data['gmix']
+    ngauss = gmixes['mean'].shape[1]
+
+    all_cdf = np.zeros(rmag.size)
+    star_cdf = np.zeros(rmag.size)
+
+    all_sf = np.zeros(rmag.size)
+    gal_sf = np.zeros(rmag.size)
+
+    for igauss in range(ngauss):
+        weight, mean, sigma = interpolate_gauss(
+            rmag_centers=centers,
+            gmixes=gmixes,
+            igauss=igauss,
+            rmag=rmag,
+            rng=rng,
+        )
+
+        # cdf, cumulative integral from left for star purities
+        cdf_vals = weight*scipy.stats.norm.cdf(conc, loc=mean, scale=sigma)
+        all_cdf += cdf_vals
+
+        # sf, cumulative integral from right for gal purities
+        sf_vals = weight*scipy.stats.norm.sf(conc, loc=mean, scale=sigma)
+        all_sf += sf_vals
+
+        if igauss < 3:
+            star_cdf += cdf_vals
+        else:
+            gal_sf += sf_vals
+
+    star_purity = np.repeat(-9.999e9, rmag.size)
+    gal_purity = np.repeat(-9.999e9, rmag.size)
+
+    w, = np.where(
+        between(rmag, rmagmin, rmagmax) &
+        (all_cdf > 0)
+    )
+    star_purity[w] = star_cdf[w]/all_cdf[w]
+
+    w, = np.where(
+        between(rmag, rmagmin, rmagmax) &
+        (all_sf > 0)
+    )
+    gal_purity[w] = gal_sf[w]/all_sf[w]
+
+    return gal_purity, star_purity
 
 
 def plot_purity(*, pdf_data, type, show=False):
